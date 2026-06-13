@@ -72,13 +72,36 @@ def api_search():
     if checkin >= checkout:
         return jsonify({"error": "체크아웃은 체크인보다 늦어야 합니다."}), 400
 
-    # 1) Airbnb 수집
-    try:
-        all_listings = crawl_airbnb(query, checkin, checkout, max_results=60)
-    except AirbnbError as exc:
-        return jsonify({"error": str(exc)}), 500
-    except Exception as exc:
-        return jsonify({"error": f"수집 중 오류: {exc}"}), 500
+    # 1) Airbnb 수집 — 한국 결과가 부족하면 " 서울" 붙여 재시도
+    def _kr_count(lst: list[dict]) -> int:
+        return sum(1 for l in lst if KR_LAT[0] <= l.get("latitude", 0) <= KR_LAT[1]
+                   and KR_LON[0] <= l.get("longitude", 0) <= KR_LON[1])
+
+    # 시도할 쿼리 목록: 원본 → "원본+서울" (이미 대도시명 포함 시 하나만)
+    q_candidates: list[str] = [query]
+    if not any(c in query for c in ["서울", "부산", "대구", "인천", "제주", "광주", "대전"]):
+        q_candidates.append(query + " 서울")
+
+    all_listings: list[dict] = []
+    last_error: str = ""
+    for q_try in dict.fromkeys(q_candidates):
+        try:
+            raw = crawl_airbnb(q_try, checkin, checkout, max_results=60)
+        except AirbnbError as exc:
+            last_error = str(exc)
+            continue
+        except Exception as exc:
+            last_error = f"수집 중 오류: {exc}"
+            continue
+
+        if _kr_count(raw) >= 3:
+            all_listings = raw
+            break
+        elif not all_listings:
+            all_listings = raw  # 부족하더라도 일단 저장, 다음 쿼리로 개선 시도
+
+    if not all_listings and last_error:
+        return jsonify({"error": last_error}), 500
 
     # 2) 필터링: 지오코딩 성공 → 반경 필터 / 실패 → 한국 범위 필터
     geo = geocode_region(query)
@@ -113,7 +136,14 @@ def api_search():
             "center_lon": sum(lons) / len(lons),
         }
 
-    return jsonify({"listings": listings, "count": len(listings), "meta": meta})
+    notice = ""
+    if len(listings) < 5:
+        notice = (
+            f"'{query}' 인근 Airbnb 매물이 {len(listings)}개로 적습니다. "
+            "더 많은 결과를 원하면 '강남', '마포구', '서울' 같이 더 넓은 지역명을 검색해 보세요."
+        )
+
+    return jsonify({"listings": listings, "count": len(listings), "meta": meta, "notice": notice})
 
 
 if __name__ == "__main__":

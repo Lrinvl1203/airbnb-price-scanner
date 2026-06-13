@@ -40,3 +40,5 @@ first_item*.json
 
 # Vercel
 .vercel/
+
+.vercel

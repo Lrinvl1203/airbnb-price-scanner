@@ -50,8 +50,9 @@
 
       <div class="flex-1 min-w-[180px]">
         <label class="block text-xs font-medium text-gray-600 mb-1">지역명</label>
-        <input id="query" type="text" placeholder="예: 마포구 연남동"
+        <input id="query" type="text" placeholder="예: 대치동, 홍대, 강남, 해운대"
                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
+        <p class="text-[10px] text-gray-400 mt-0.5">동·구·역·도시명 자유롭게 입력</p>
       </div>
 
       <div>
@@ -71,6 +72,21 @@
         검색
       </button>
     </div>
+
+    <!-- 예시 버튼 -->
+    <div class="w-full mt-2 flex flex-wrap gap-1.5">
+      <span class="text-[10px] text-gray-400 self-center">빠른 검색:</span>
+      <button onclick="setQuery('대치동')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">대치동</button>
+      <button onclick="setQuery('홍대')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">홍대</button>
+      <button onclick="setQuery('강남')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">강남</button>
+      <button onclick="setQuery('해운대')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">해운대</button>
+      <button onclick="setQuery('제주시')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">제주시</button>
+      <button onclick="setQuery('경주')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">경주</button>
+      <button onclick="setQuery('서울 마포구')" class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">마포구</button>
+    </div>
+
+    <!-- 안내 (결과 적을 때) -->
+    <div id="noticeMsg" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm"></div>
 
     <!-- 오류 -->
     <div id="errorMsg" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"></div>
@@ -241,6 +257,9 @@ async function doSearch() {
     if (!data.listings || data.listings.length === 0) {
       showError("검색 결과가 없습니다. 지역명 또는 날짜를 변경해 보세요."); return;
     }
+
+    hideNotice();
+    if (data.notice) showNotice(data.notice);
 
     allListings = data.listings;
     buildFilterUI();
@@ -496,11 +515,24 @@ function showError(msg) {
 function hideError() {
   document.getElementById("errorMsg").classList.add("hidden");
 }
+function showNotice(msg) {
+  const el = document.getElementById("noticeMsg");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+function hideNotice() {
+  document.getElementById("noticeMsg").classList.add("hidden");
+}
 
 // Enter 키 검색
 document.getElementById("query").addEventListener("keydown", e => {
   if (e.key === "Enter") doSearch();
 });
+
+function setQuery(q) {
+  document.getElementById("query").value = q;
+  doSearch();
+}
 </script>
 </body>
 </html>

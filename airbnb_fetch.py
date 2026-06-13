@@ -42,23 +42,28 @@ class AirbnbError(RuntimeError):
 
 
 # ────────────────────────────────────────────
-#  지오코딩 (Nominatim)
+#  쿼리 자동 보정
 # ────────────────────────────────────────────
 
-def geocode_region(query: str) -> dict | None:
-    """
-    Nominatim(OSM)으로 지역 중심 좌표 + 바운딩박스 반환.
+# 한국 행정구역 접미사 (단독 입력 시 "서울" 컨텍스트 추가)
+_KR_SUFFIX = re.compile(r"[가-힣]+(동|구|읍|면|리|로|가|길|역|동네|마을)$")
+# 제주/부산/대구 등 대도시는 그 자체로 충분
+_KR_CITY = re.compile(r"(서울|부산|대구|인천|광주|대전|울산|세종|수원|성남|제주|전주|창원|청주|춘천|강릉)")
 
-    반환 예시:
-      {
-        "lat": 37.5626,  "lon": 126.9226,
-        "bb_minlat": 37.55, "bb_maxlat": 37.57,
-        "bb_minlon": 126.91, "bb_maxlon": 126.94,
-      }
+
+def normalize_query(query: str) -> str:
     """
+    Airbnb 검색용 쿼리는 원본을 그대로 반환.
+    (Airbnb는 한국어 지역명을 자체 인식하므로 수정하지 않음)
+    """
+    return query.strip()
+
+
+def _geocode_one(q: str) -> dict | None:
+    """Nominatim 단일 쿼리 (한국 우선 → 전체)."""
     for extra in [{"countrycodes": "kr"}, {}]:
         params: dict[str, Any] = {
-            "q": query,
+            "q": q,
             "format": "json",
             "limit": "1",
             **extra,
@@ -77,7 +82,7 @@ def geocode_region(query: str) -> dict | None:
             if not data:
                 continue
             item = data[0]
-            bb = item.get("boundingbox") or []  # [min_lat, max_lat, min_lon, max_lon]
+            bb = item.get("boundingbox") or []
             return {
                 "lat": float(item["lat"]),
                 "lon": float(item["lon"]),
@@ -89,6 +94,31 @@ def geocode_region(query: str) -> dict | None:
         except Exception:
             pass
     return None
+
+
+def geocode_region(query: str) -> dict | None:
+    """
+    Nominatim(OSM)으로 지역 중심 좌표 + 바운딩박스 반환.
+    여러 쿼리 변형을 순서대로 시도해서 첫 번째 성공 결과를 반환.
+    """
+    candidates = _build_geo_candidates(query)
+    for q in candidates:
+        result = _geocode_one(q)
+        if result:
+            return result
+    return None
+
+
+def _build_geo_candidates(query: str) -> list[str]:
+    """지오코딩 시도 순서: 보정된 쿼리 → 원본 → 서울 추가."""
+    normalized = normalize_query(query)
+    seen: list[str] = [normalized]
+    if query not in seen:
+        seen.append(query)
+    # "서울" 붙인 버전
+    if "서울" not in query and "Seoul" not in query:
+        seen.append(query + " 서울")
+    return seen
 
 
 def expand_bbox(geo: dict, delta: float = 0.08) -> dict:
