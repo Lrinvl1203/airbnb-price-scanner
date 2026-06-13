@@ -110,11 +110,13 @@ def api_search():
 
     if geo:
         clat, clon = geo["lat"], geo["lon"]
-        meta = {"center_lat": clat, "center_lon": clon}
+        used_radius = 150
         for radius in [30, 60, 150]:
             listings = radius_filter(all_listings, clat, clon, radius)
             if len(listings) >= 3:
+                used_radius = radius
                 break
+        meta = {"center_lat": clat, "center_lon": clon, "radius_km": used_radius}
     else:
         # 지오코딩 실패 → 한국 좌표 범위로 필터
         listings = korea_filter(all_listings)

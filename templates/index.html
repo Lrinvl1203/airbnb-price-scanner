@@ -184,11 +184,14 @@
         <div id="map"></div>
       </div>
       <!-- 범례 -->
-      <div class="flex items-center gap-2 mt-2 px-1">
+      <div class="flex items-center gap-2 mt-2 px-1 flex-wrap">
         <span class="text-xs text-gray-400">저렴</span>
-        <div class="flex-1 h-2 rounded-full" style="background: linear-gradient(to right, #22c55e, #eab308, #ef4444);"></div>
+        <div class="flex-1 min-w-[80px] h-2 rounded-full" style="background: linear-gradient(to right, #22c55e, #eab308, #ef4444);"></div>
         <span class="text-xs text-gray-400">비쌈</span>
-        <span class="text-xs text-gray-400 ml-2">● = 지도에 표시된 숙소</span>
+        <span class="text-xs text-gray-400 ml-2">● 숙소</span>
+        <span class="text-xs text-gray-400">
+          <span style="display:inline-block;width:10px;height:2px;border:1.5px dashed #f43f5e;vertical-align:middle;margin-right:2px"></span>검색 반경
+        </span>
       </div>
     </div>
   </div>
@@ -218,10 +221,12 @@
 // ────────────────────────────────────────────
 //  전역 상태
 // ────────────────────────────────────────────
-let allListings = [];
-let filtered   = [];
-const charts   = {};
-let mapMarkers = [];
+let allListings  = [];
+let filtered     = [];
+const charts     = {};
+let mapMarkers   = [];
+let radiusCircle = null;   // 검색 반경 원
+let searchMeta   = {};     // 마지막 검색 meta (center, radius_km)
 
 // ────────────────────────────────────────────
 //  지도 초기화 (서울 중심)
@@ -261,6 +266,7 @@ async function doSearch() {
     hideNotice();
     if (data.notice) showNotice(data.notice);
 
+    searchMeta  = data.meta || {};
     allListings = data.listings;
     buildFilterUI();
     applyFilters();
@@ -295,10 +301,10 @@ function buildFilterUI() {
     <button class="filter-chip on" data-val="${b}" onclick="toggleChip(this)">${b}개</button>
   `).join("");
 
-  // 가격 기본값
+  // 가격 기본값 (원 단위 입력, 만 단위로 힌트 표시)
   const prices = allListings.map(l => l.price_per_night).filter(p => p > 0);
-  document.getElementById("priceMin").placeholder = fw(Math.min(...prices));
-  document.getElementById("priceMax").placeholder = fw(Math.max(...prices));
+  document.getElementById("priceMin").placeholder = fmtMan(Math.min(...prices));
+  document.getElementById("priceMax").placeholder = fmtMan(Math.max(...prices));
 }
 
 function toggleChip(btn) {
@@ -351,51 +357,87 @@ function renderStats() {
     return;
   }
   const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
-  document.getElementById("statAvg").textContent = fwKr(avg);
-  document.getElementById("statMin").textContent = fwKr(Math.min(...prices));
-  document.getElementById("statMax").textContent = fwKr(Math.max(...prices));
+  document.getElementById("statAvg").textContent = fmtManKr(avg);
+  document.getElementById("statMin").textContent = fmtManKr(Math.min(...prices));
+  document.getElementById("statMax").textContent = fmtManKr(Math.max(...prices));
 }
 
 // ────────────────────────────────────────────
 //  지도
 // ────────────────────────────────────────────
 function renderMap() {
+  // 이전 마커·원 제거
   mapMarkers.forEach(m => m.remove());
   mapMarkers = [];
+  if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
 
   const geo = filtered.filter(l => Math.abs(l.latitude) > 0.1 && Math.abs(l.longitude) > 0.1);
   if (!geo.length) return;
 
-  const prices = geo.map(l => l.price_per_night);
+  // ① 검색 반경 원 (지오코딩 성공 시)
+  const layers = [];
+  if (searchMeta.center_lat && searchMeta.radius_km) {
+    radiusCircle = L.circle(
+      [searchMeta.center_lat, searchMeta.center_lon],
+      {
+        radius:      searchMeta.radius_km * 1000,
+        color:       "#f43f5e",
+        fillColor:   "#fda4af",
+        fillOpacity: 0.07,
+        weight:      1.5,
+        dashArray:   "6 4",
+      }
+    ).addTo(map);
+    layers.push(radiusCircle);
+  }
+
+  // ② 좌표 기준 중복 제거 (같은 건물 여러 매물 → 가장 저렴한 것만 표시)
+  const coordMap = {};
+  geo.forEach(l => {
+    const key = `${l.latitude.toFixed(4)},${l.longitude.toFixed(4)}`;
+    if (!coordMap[key]) coordMap[key] = [];
+    coordMap[key].push(l);
+  });
+  const unique = Object.values(coordMap).map(group =>
+    group.reduce((a, b) => a.price_per_night <= b.price_per_night ? a : b)
+  );
+
+  const prices = unique.map(l => l.price_per_night);
   const minP   = Math.min(...prices);
   const maxP   = Math.max(...prices);
 
-  geo.forEach(l => {
+  // ③ 마커 렌더링
+  unique.forEach(l => {
+    const group = coordMap[`${l.latitude.toFixed(4)},${l.longitude.toFixed(4)}`];
+    const extra = group.length > 1 ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px">같은 위치 ${group.length}개 매물</div>` : "";
+
     const color  = priceColor(l.price_per_night, minP, maxP);
-    const circle = L.circleMarker([l.latitude, l.longitude], {
+    const marker = L.circleMarker([l.latitude, l.longitude], {
       radius: 8, fillColor: color, color: "#fff",
       weight: 1.5, opacity: 1, fillOpacity: 0.88,
     }).addTo(map);
 
-    circle.bindPopup(`
+    marker.bindPopup(`
       <div style="font-size:13px; line-height:1.5">
         <div style="font-weight:600; margin-bottom:3px">${esc(l.title)}</div>
-        <div style="color:#e11d48; font-weight:700; font-size:15px">₩${l.price_per_night.toLocaleString()}<span style="font-size:11px; font-weight:400">/박</span></div>
+        <div style="color:#e11d48; font-weight:700; font-size:15px">${fmtManKr(l.price_per_night)}<span style="font-size:11px; font-weight:400">/박</span></div>
         <div style="color:#64748b; margin-top:4px">${esc(l.room_type)} · 침실 ${l.bedrooms}개 · 침대 ${l.beds}개</div>
-        <div style="color:#64748b">${l.rating ? "★ " + l.rating.toFixed(2) : "평점 없음"} · 리뷰 ${l.review_count}개</div>
+        <div style="color:#64748b">${l.rating ? "★ " + l.rating.toFixed(2) : "평점 없음"}</div>
+        ${extra}
         <a href="${esc(l.url)}" target="_blank"
            style="color:#3b82f6; font-size:11px; text-decoration:underline; margin-top:4px; display:inline-block">
           Airbnb에서 보기 →
         </a>
       </div>`);
 
-    mapMarkers.push(circle);
+    mapMarkers.push(marker);
+    layers.push(marker);
   });
 
-  // 범위 맞추기
-  const lats = geo.map(l => l.latitude);
-  const lons = geo.map(l => l.longitude);
-  map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [40, 40] });
+  // ④ 뷰 맞추기 (원 + 마커 전체 포함)
+  if (layers.length) {
+    map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
+  }
 }
 
 function priceColor(price, minP, maxP) {
@@ -435,7 +477,7 @@ function renderHistogram(prices) {
   for (let i = 0; i < N; i++) {
     const lo = minP + i * step;
     const hi = lo + step;
-    labels.push(`${numK(lo)}~${numK(hi)}`);
+    labels.push(`${fmtMan(lo)}~${fmtMan(hi)}`);
   }
   prices.forEach(p => {
     const idx = Math.min(Math.floor((p - minP) / step), N - 1);
@@ -484,7 +526,7 @@ function renderGroupBar(canvasId, listings, keyFn, _label) {
       indexAxis: "y",
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { callback: v => "₩" + numK(v), font: { size: 9 } } },
+        x: { ticks: { callback: v => fmtManKr(v), font: { size: 9 } } },
         y: { ticks: { font: { size: 10 } } },
       },
     },
@@ -498,10 +540,28 @@ function destroyChart(id) {
 // ────────────────────────────────────────────
 //  유틸
 // ────────────────────────────────────────────
-const fw   = n => n.toLocaleString();
-const fwKr = n => "₩" + n.toLocaleString();
-const numK = n => n >= 10000 ? (n / 10000).toFixed(n % 10000 ? 1 : 0) + "만" : n.toLocaleString();
-const esc  = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const fw  = n => n.toLocaleString();
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+// 만/억 단위 포맷 (59_real_estate 벤치마킹)
+function fmtMan(won) {
+  if (!won && won !== 0) return "—";
+  if (won >= 100_000_000) {               // 1억 이상
+    const eok  = Math.floor(won / 100_000_000);
+    const rest = Math.round((won % 100_000_000) / 10_000);
+    if (rest) return `${eok}억 ${rest.toLocaleString()}만`;
+    return `${eok}억`;
+  }
+  if (won >= 10_000) {                    // 1만 이상
+    const man = won / 10_000;
+    return (man % 1 === 0 ? man : man.toFixed(1)) + "만";
+  }
+  return won.toLocaleString();            // 1만 미만 → 원 단위
+}
+function fmtManKr(won) { return "₩" + fmtMan(won); }
+
+// 레거시: 히스토그램 등에서 사용 (fmtMan과 동일)
+const numK = fmtMan;
 
 function setLoading(on) {
   document.getElementById("loadingMsg").classList.toggle("hidden", !on);
