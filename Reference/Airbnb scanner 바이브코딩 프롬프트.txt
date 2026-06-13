@@ -1,0 +1,200 @@
+Airbnb scanner 바이브코딩 프롬프트
+
+나는 Airbnb 시세 분석 가능성을 검증하는 아주 단순한 Vercel 배포용 MVP를 만들고 싶다.
+
+중요:
+- Streamlit이 아니라 Next.js + TypeScript + Tailwind CSS로 만든다.
+- Vercel에 바로 배포 가능한 구조로 만든다.
+- 실제 Airbnb 자동 수집은 이번 버전에서 제외한다.
+- 우선 샘플 데이터와 CSV 업로드 기반으로 앱이 완전히 동작하게 만든다.
+- 목적은 “구현 가능한지 검증하는 PoC”다.
+- 복잡한 DB, 로그인, 결제, 지도, AI 분석은 제외한다.
+
+제품명:
+Airbnb 시세 스캐너 MVP
+
+목표:
+사용자가 특정 지역명, 예를 들어 “마포구 연남동”, “강남구 역삼동”, “종로구 익선동”을 입력하면 해당 지역의 Airbnb 숙소 시세를 분석하는 웹앱을 만든다.
+
+핵심 기능:
+1. 지역명 입력
+2. 샘플 데이터 로딩
+3. CSV 업로드
+4. 숙소 리스트 표시
+5. 평균 1박 가격 표시
+6. 최고 가격 표시
+7. 최저 가격 표시
+8. 중위 가격 표시
+9. 숙소 수 표시
+10. 숙소 유형별 평균 가격 표시
+11. 침실 수별 평균 가격 표시
+12. 욕실 수별 평균 가격 표시
+13. 주방 있음/없음별 평균 가격 표시
+14. 엘리베이터 있음/없음별 평균 가격 표시
+15. 필터링된 결과 CSV 다운로드
+
+필터:
+- 숙소 유형
+- 침실 수
+- 침대 수
+- 욕실 수
+- 주방 여부
+- 엘리베이터 여부
+- 가격 범위
+- 평점 이상
+- 리뷰 수 이상
+
+기술 스택:
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- React state
+- CSV 파싱은 papaparse 사용 가능
+- DB 사용하지 않음
+- 서버 API도 처음에는 사용하지 않음
+- 모든 분석은 클라이언트 사이드에서 처리
+
+폴더 구조:
+- app/page.tsx
+- components/FilterPanel.tsx
+- components/SummaryCards.tsx
+- components/GroupStatsTable.tsx
+- components/ListingsTable.tsx
+- components/CsvUploader.tsx
+- lib/types.ts
+- lib/sample-data.ts
+- lib/filters.ts
+- lib/stats.ts
+- lib/csv.ts
+- package.json
+- README.md
+
+데이터 타입:
+AirbnbListing 타입을 만든다.
+
+필드:
+- listing_id: string
+- title: string
+- url: string
+- region_query: string
+- room_type: string
+- property_type: string
+- price_per_night: number
+- currency: "KRW"
+- bedrooms: number
+- beds: number
+- bathrooms: number
+- has_kitchen: boolean
+- has_elevator: boolean
+- rating: number
+- review_count: number
+
+샘플 데이터:
+sample-data.ts에 최소 30개 이상의 샘플 데이터를 만든다.
+지역은 아래 3개를 포함한다.
+- 마포구 연남동
+- 강남구 역삼동
+- 종로구 익선동
+
+가격 범위:
+- 1룸: 60,000원 ~ 120,000원
+- 2룸: 100,000원 ~ 220,000원
+- 3룸: 180,000원 ~ 400,000원
+
+화면 구성:
+
+상단:
+- 제목: Airbnb 시세 스캐너 MVP
+- 설명: 구/동 기준으로 숙소 가격대를 분석하는 PoC입니다.
+
+입력 영역:
+- 지역명 입력창
+- CSV 업로드
+- 샘플 데이터 사용 안내
+
+요약 카드:
+- 숙소 수
+- 평균 가격
+- 중위 가격
+- 최저 가격
+- 최고 가격
+
+필터 영역:
+- 숙소 유형 선택
+- 침실 수 선택
+- 침대 수 선택
+- 욕실 수 선택
+- 주방 여부 선택
+- 엘리베이터 여부 선택
+- 가격 범위 슬라이더
+- 평점 이상
+- 리뷰 수 이상
+
+그룹 통계:
+- 숙소 유형별 평균 가격
+- 침실 수별 평균 가격
+- 욕실 수별 평균 가격
+- 주방 여부별 평균 가격
+- 엘리베이터 여부별 평균 가격
+
+숙소 리스트:
+- 숙소명
+- 지역
+- 숙소 유형
+- 숙소 타입
+- 가격
+- 침실
+- 침대
+- 욕실
+- 주방 여부
+- 엘리베이터 여부
+- 평점
+- 리뷰 수
+- URL
+
+CSV 업로드:
+- 사용자가 CSV를 업로드하면 기존 샘플 데이터 대신 업로드 데이터를 사용한다.
+- 필수 컬럼이 없으면 오류 메시지를 보여준다.
+- has_kitchen, has_elevator는 true/false 또는 yes/no 또는 있음/없음을 모두 처리한다.
+- price_per_night는 숫자로 변환한다.
+
+CSV 다운로드:
+- 현재 필터링된 결과를 CSV로 다운로드할 수 있게 한다.
+
+통계 계산:
+- calculateSummaryStats(listings)
+  - count
+  - average_price
+  - median_price
+  - min_price
+  - max_price
+
+- calculateGroupStats(listings, groupBy)
+  - group
+  - count
+  - average_price
+  - min_price
+  - max_price
+
+주의:
+- 실제 Airbnb 수집 코드는 작성하지 않는다.
+- 나중에 실제 수집 데이터를 붙일 수 있도록 AirbnbListing 타입을 기준으로 전체 앱을 구성한다.
+- 초보자가 이해하기 쉽게 단순한 코드로 작성한다.
+- UI는 깔끔하고 실용적으로 만든다.
+- 모든 코드는 바로 실행 가능해야 한다.
+- npm install 후 npm run dev로 실행되게 만든다.
+- Vercel 배포에 문제 없는 구조로 만든다.
+
+README.md에 포함할 내용:
+1. 프로젝트 설명
+2. 설치 방법
+3. 로컬 실행 방법
+4. Vercel 배포 방법
+5. CSV 업로드 포맷
+6. 현재 버전은 실제 Airbnb 수집이 아니라 샘플/CSV 기반 PoC라는 설명
+7. 나중에 실제 Airbnb 수집 로직을 붙이려면 sample-data.ts 대신 API/DB 데이터를 AirbnbListing 타입으로 연결하면 된다는 설명
+
+최종 산출물:
+- 전체 파일 코드 작성
+- 각 파일명을 명확히 표시
+- 바로 복사해서 프로젝트로 만들 수 있게 작성
