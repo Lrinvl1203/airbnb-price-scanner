@@ -62,11 +62,16 @@ def diag():
         result["steps"].append(f"curl_cffi IMPORT FAIL: {e}")
         return jsonify(result)
 
-    # 2) Nominatim geocoding
+    # 2) Nominatim geocoding — 여러 쿼리 테스트
     try:
-        t0 = _time.time()
+        for gq in ["홍대", "제주도", "부산 해운대"]:
+            t0 = _time.time()
+            geo_r = geocode_region(gq)
+            if geo_r:
+                result["steps"].append(f"geocode '{gq}': lat={geo_r['lat']:.2f},lon={geo_r['lon']:.2f} ({_time.time()-t0:.1f}s)")
+            else:
+                result["steps"].append(f"geocode '{gq}': FAILED ({_time.time()-t0:.1f}s)")
         geo = geocode_region("홍대")
-        result["steps"].append(f"geocode: {geo} ({_time.time()-t0:.1f}s)")
     except Exception as e:
         result["steps"].append(f"geocode FAIL: {e}")
 
