@@ -151,7 +151,15 @@ def api_search():
         return jsonify({"error": "2년 이내 날짜만 검색할 수 있습니다."}), 400
 
     # 1) 지오코딩 먼저 — 반경 스케일 결정
-    _CODE_VER = "v4-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
+    _CODE_VER = "v5-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
+    from airbnb_fetch import _build_geo_candidates, _geocode_one, _KR_REGION_FALLBACK
+    _cands = _build_geo_candidates(query)
+    _geo_steps: list[str] = [f"cands={_cands}"]
+    for _cq in _cands:
+        _g = _geocode_one(_cq)
+        _geo_steps.append(f"geocode({_cq!r})→{_g}")
+        if _g:
+            break
     geo = geocode_region(query)
     clat_geo = geo["lat"] if geo else None
     clon_geo = geo["lon"] if geo else None
@@ -183,7 +191,7 @@ def api_search():
     _dbg: list[str] = [
         f"code={_CODE_VER}",
         f"geo={_geo_label} lat={clat_geo} lon={clon_geo}",
-    ]
+    ] + _geo_steps
 
     if geo:
         # bbox 검색: IP와 무관하게 좌표로 검색 → 일본 결과 없음
