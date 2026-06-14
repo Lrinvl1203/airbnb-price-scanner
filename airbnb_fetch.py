@@ -390,6 +390,8 @@ class AirbnbClient:
             "adults": "1",
             "source": "structured_search_input_header",
             "search_type": "autocomplete_click",
+            "locale": "ko",
+            "currency": "KRW",
         }
         if cursor:
             params["cursor"] = cursor

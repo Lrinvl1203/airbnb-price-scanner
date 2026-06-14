@@ -72,20 +72,19 @@ def diag():
 
     # 3) Airbnb 1페이지만 (delay 없이)
     try:
-        from airbnb_fetch import AirbnbClient
+        from airbnb_fetch import AirbnbClient, _normalize
         client = AirbnbClient(delay_min=0, delay_max=0)
         t0 = _time.time()
         sr, cursors = client._fetch_query("홍대", "2026-06-21", "2026-06-22")
         result["steps"].append(f"airbnb fetch: {len(sr)} items, {len(cursors)} cursors ({_time.time()-t0:.1f}s)")
         if sr:
-            import json as _json
-            item0 = sr[0]
-            result["steps"].append(f"first_item_keys: {list(item0.keys())}")
-            result["steps"].append(f"has_demandStayListing: {'demandStayListing' in item0}")
-            # normalize 테스트
-            from airbnb_fetch import _normalize
-            n = _normalize(item0, "홍대")
-            result["steps"].append(f"normalize_result: {n}")
+            n = _normalize(sr[0], "홍대")
+            result["steps"].append(f"first_item: lat={n.get('latitude')}, lon={n.get('longitude')}, title={n.get('title','')[:40]}")
+            # 서울 마포구 기준 100km 내 몇 개?
+            seoul_lat, seoul_lon = 37.5503, 126.9254
+            near = [_normalize(x, "홍대") for x in sr]
+            kr_count = sum(1 for x in near if x and haversine(seoul_lat, seoul_lon, x.get("latitude",0), x.get("longitude",0)) <= 100)
+            result["steps"].append(f"items within 100km of Hongdae: {kr_count}/{len(sr)}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
 
@@ -128,11 +127,17 @@ def api_search():
 
     # 1) 지오코딩 먼저 — 반경 스케일 결정
     geo = geocode_region(query)
+    clat_geo = geo["lat"] if geo else None
+    clon_geo = geo["lon"] if geo else None
 
     # 2) Airbnb 키워드 수집 (관련성 높은 결과, 최대 120개)
-    def _kr_count(lst: list[dict]) -> int:
-        return sum(1 for l in lst if KR_LAT[0] <= l.get("latitude", 0) <= KR_LAT[1]
-                   and KR_LON[0] <= l.get("longitude", 0) <= KR_LON[1])
+    def _near_geo(lst: list[dict]) -> int:
+        """geo 중심 100km 이내 매물 수 (일본 등 원격지 필터)."""
+        if clat_geo is None:
+            return sum(1 for l in lst if KR_LAT[0] <= l.get("latitude", 0) <= KR_LAT[1]
+                       and KR_LON[0] <= l.get("longitude", 0) <= KR_LON[1])
+        return sum(1 for l in with_coords(lst)
+                   if haversine(clat_geo, clon_geo, l["latitude"], l["longitude"]) <= 100)
 
     q_candidates: list[str] = [query]
     if not any(c in query for c in ["서울", "부산", "대구", "인천", "제주", "광주", "대전"]):
@@ -149,7 +154,7 @@ def api_search():
         except Exception as exc:
             last_error = f"수집 중 오류: {exc}"
             continue
-        if _kr_count(raw) >= 3:
+        if _near_geo(raw) >= 3:
             all_listings = raw
             break
         elif not all_listings:
