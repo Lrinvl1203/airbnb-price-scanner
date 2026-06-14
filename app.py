@@ -79,11 +79,12 @@ def diag():
         result["steps"].append(f"airbnb fetch: {len(sr)} items, {len(cursors)} cursors ({_time.time()-t0:.1f}s)")
         if sr:
             n = _normalize(sr[0], "홍대")
-            result["steps"].append(f"first_item: lat={n.get('latitude')}, lon={n.get('longitude')}, title={n.get('title','')[:40]}")
-            # 서울 마포구 기준 100km 내 몇 개?
+            if n:
+                result["steps"].append(f"first_item: lat={n.latitude}, lon={n.longitude}, title={n.title[:40]}")
+            # 서울 홍대 기준 100km 내 몇 개?
             seoul_lat, seoul_lon = 37.5503, 126.9254
             near = [_normalize(x, "홍대") for x in sr]
-            kr_count = sum(1 for x in near if x and haversine(seoul_lat, seoul_lon, x.get("latitude",0), x.get("longitude",0)) <= 100)
+            kr_count = sum(1 for x in near if x and haversine(seoul_lat, seoul_lon, x.latitude, x.longitude) <= 100)
             result["steps"].append(f"items within 100km of Hongdae: {kr_count}/{len(sr)}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
