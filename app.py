@@ -48,6 +48,43 @@ def radius_filter(
     ]
 
 
+@app.route("/api/diag")
+def diag():
+    """Vercel 환경 진단 — 스크래퍼 동작 확인용 임시 엔드포인트."""
+    import sys, time as _time
+    result: dict = {"python": sys.version, "steps": []}
+
+    # 1) curl_cffi import
+    try:
+        from curl_cffi import requests as _cr
+        result["steps"].append("curl_cffi: OK")
+    except Exception as e:
+        result["steps"].append(f"curl_cffi IMPORT FAIL: {e}")
+        return jsonify(result)
+
+    # 2) Nominatim geocoding
+    try:
+        t0 = _time.time()
+        geo = geocode_region("홍대")
+        result["steps"].append(f"geocode: {geo} ({_time.time()-t0:.1f}s)")
+    except Exception as e:
+        result["steps"].append(f"geocode FAIL: {e}")
+
+    # 3) Airbnb 1페이지만 (delay 없이)
+    try:
+        from airbnb_fetch import AirbnbClient
+        client = AirbnbClient(delay_min=0, delay_max=0)
+        t0 = _time.time()
+        sr, cursors = client._fetch_query("홍대", "2026-06-21", "2026-06-22")
+        result["steps"].append(f"airbnb fetch: {len(sr)} items, {len(cursors)} cursors ({_time.time()-t0:.1f}s)")
+        if sr:
+            result["steps"].append(f"first_item_keys: {list(sr[0].keys())[:6]}")
+    except Exception as e:
+        result["steps"].append(f"airbnb FAIL: {e}")
+
+    return jsonify(result)
+
+
 @app.route("/")
 def index():
     today = date.today()
