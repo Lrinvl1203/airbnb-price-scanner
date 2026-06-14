@@ -81,14 +81,10 @@ def _geocode_one(q: str) -> dict | None:
                 data = json.loads(r.read().decode("utf-8"))
             if not data:
                 continue
-            # 행정구역(place_rank 1-25)만 사용 — 식당/POI(30+) 제외
-            admin_types = {"administrative", "country", "state", "county",
-                           "city", "town", "village", "suburb", "island",
-                           "archipelago", "region", "municipality"}
-            # 첫 번째로 발견되는 '지역' 결과를 반환:
-            #   - place_rank ≤ 25: 행정구역 확정
-            #   - class in (boundary, place, natural, railway, highway): 지역 랜드마크로 허용
-            #   - 나머지(amenity, shop 등 rank≥30): 스킵
+            # 행정구역/지역 랜드마크만 사용 — 식당/상점 POI 제외
+            # place_rank: 1-25=행정구역, 26-30=장소/섬, 31+=POI
+            # class: boundary/place/natural/railway/highway = 지역 관련
+            #        amenity/shop/tourism 등 = 상업 POI (제외)
             for item in data:
                 rank = int(item.get("place_rank") or 99)
                 osm_class = item.get("class", "") or ""
@@ -109,27 +105,62 @@ def _geocode_one(q: str) -> dict | None:
     return None
 
 
+# 한국 주요 지역 하드코딩 좌표 (Nominatim 실패 시 최종 폴백)
+_KR_REGION_FALLBACK: dict[str, dict] = {
+    "제주": {"lat": 33.4996, "lon": 126.5312,
+             "bb_minlat": 33.10, "bb_maxlat": 33.90, "bb_minlon": 126.10, "bb_maxlon": 127.00},
+    "부산": {"lat": 35.1796, "lon": 129.0756,
+             "bb_minlat": 34.85, "bb_maxlat": 35.45, "bb_minlon": 128.75, "bb_maxlon": 129.35},
+    "대구": {"lat": 35.8714, "lon": 128.6014,
+             "bb_minlat": 35.70, "bb_maxlat": 36.05, "bb_minlon": 128.45, "bb_maxlon": 128.80},
+    "인천": {"lat": 37.4563, "lon": 126.7052,
+             "bb_minlat": 37.30, "bb_maxlat": 37.65, "bb_minlon": 126.40, "bb_maxlon": 126.90},
+    "광주": {"lat": 35.1595, "lon": 126.8526,
+             "bb_minlat": 35.05, "bb_maxlat": 35.30, "bb_minlon": 126.75, "bb_maxlon": 127.00},
+    "대전": {"lat": 36.3504, "lon": 127.3845,
+             "bb_minlat": 36.20, "bb_maxlat": 36.50, "bb_minlon": 127.25, "bb_maxlon": 127.55},
+    "서울": {"lat": 37.5665, "lon": 126.9780,
+             "bb_minlat": 37.40, "bb_maxlat": 37.70, "bb_minlon": 126.80, "bb_maxlon": 127.20},
+}
+
+
 def geocode_region(query: str) -> dict | None:
     """
     Nominatim(OSM)으로 지역 중심 좌표 + 바운딩박스 반환.
-    여러 쿼리 변형을 순서대로 시도해서 첫 번째 성공 결과를 반환.
+    여러 쿼리 변형을 순서대로 시도, 모두 실패하면 하드코딩 폴백 사용.
     """
     candidates = _build_geo_candidates(query)
     for q in candidates:
         result = _geocode_one(q)
         if result:
             return result
+    # Nominatim 완전 실패 → 주요 지역 하드코딩 폴백
+    for key, geo in _KR_REGION_FALLBACK.items():
+        if key in query:
+            return geo
     return None
 
 
+# 명시적 광역 지명 — 서울 폴백 없이 그 자체로 지오코딩
+_EXPLICIT_REGION = re.compile(
+    r"(제주|부산|대구|인천|광주|대전|울산|세종|전주|창원|청주|춘천|강릉|속초|경주|수원|성남|고양|용인|안산|화성|평택|의정부|포항|김해|전남|경남|경북|전북|충남|충북|강원|경기)"
+)
+
+
 def _build_geo_candidates(query: str) -> list[str]:
-    """지오코딩 시도 순서: 보정된 쿼리 → 원본 → 서울 추가."""
+    """지오코딩 시도 순서: 보정된 쿼리 → 원본 → (모호한 경우만) 서울 추가."""
     normalized = normalize_query(query)
     seen: list[str] = [normalized]
     if query not in seen:
         seen.append(query)
-    # "서울" 붙인 버전
-    if "서울" not in query and "Seoul" not in query:
+    # 명시적 지역/도시명이 없는 모호한 쿼리만 서울 컨텍스트 추가
+    # (제주도, 부산 등은 서울 폴백 없이 직접 지오코딩)
+    has_region = (
+        "서울" in query
+        or "Seoul" in query
+        or bool(_EXPLICIT_REGION.search(query))
+    )
+    if not has_region:
         seen.append(query + " 서울")
     return seen
 

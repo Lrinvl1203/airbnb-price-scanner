@@ -151,7 +151,7 @@ def api_search():
         return jsonify({"error": "2년 이내 날짜만 검색할 수 있습니다."}), 400
 
     # 1) 지오코딩 먼저 — 반경 스케일 결정
-    _CODE_VER = "v3-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
+    _CODE_VER = "v4-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
     geo = geocode_region(query)
     clat_geo = geo["lat"] if geo else None
     clon_geo = geo["lon"] if geo else None
