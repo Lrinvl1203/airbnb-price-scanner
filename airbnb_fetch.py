@@ -85,11 +85,16 @@ def _geocode_one(q: str) -> dict | None:
             admin_types = {"administrative", "country", "state", "county",
                            "city", "town", "village", "suburb", "island",
                            "archipelago", "region", "municipality"}
+            # 첫 번째로 발견되는 '지역' 결과를 반환:
+            #   - place_rank ≤ 25: 행정구역 확정
+            #   - class in (boundary, place, natural, railway, highway): 지역 랜드마크로 허용
+            #   - 나머지(amenity, shop 등 rank≥30): 스킵
             for item in data:
                 rank = int(item.get("place_rank") or 99)
                 osm_class = item.get("class", "") or ""
-                if rank > 25 and osm_class not in ("boundary", "place", "natural"):
-                    continue  # 비행정구역 (식당, 상점 등) 스킵
+                ok_class = osm_class in ("boundary", "place", "natural", "railway", "highway")
+                if rank > 25 and not ok_class:
+                    continue  # 식당, 상점 등 POI 스킵
                 bb = item.get("boundingbox") or []
                 return {
                     "lat": float(item["lat"]),
