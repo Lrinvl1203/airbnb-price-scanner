@@ -151,7 +151,7 @@ def api_search():
         return jsonify({"error": "2년 이내 날짜만 검색할 수 있습니다."}), 400
 
     # 1) 지오코딩 먼저 — 반경 스케일 결정
-    _CODE_VER = "v5-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
+    _CODE_VER = "v6-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
     from airbnb_fetch import _build_geo_candidates, _geocode_one, _KR_REGION_FALLBACK
     _cands = _build_geo_candidates(query)
     _geo_steps: list[str] = [f"cands={_cands}"]

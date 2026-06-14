@@ -106,7 +106,28 @@ def _geocode_one(q: str) -> dict | None:
 
 
 # 한국 주요 지역 하드코딩 좌표 (Nominatim 실패 시 최종 폴백)
+# 키: 쿼리에 이 문자열이 포함되면 해당 좌표 반환 (더 구체적인 키가 먼저 오도록 정렬)
 _KR_REGION_FALLBACK: dict[str, dict] = {
+    # 수도권 동네 (서울 키보다 먼저)
+    "해운대": {"lat": 35.1631, "lon": 129.1631,
+               "bb_minlat": 35.10, "bb_maxlat": 35.23, "bb_minlon": 129.10, "bb_maxlon": 129.25},
+    "강남": {"lat": 37.5172, "lon": 127.0473,
+             "bb_minlat": 37.48, "bb_maxlat": 37.55, "bb_minlon": 127.00, "bb_maxlon": 127.10},
+    "홍대": {"lat": 37.5503, "lon": 126.9254,
+             "bb_minlat": 37.52, "bb_maxlat": 37.58, "bb_minlon": 126.90, "bb_maxlon": 126.96},
+    "마포": {"lat": 37.5638, "lon": 126.9084,
+             "bb_minlat": 37.52, "bb_maxlat": 37.60, "bb_minlon": 126.87, "bb_maxlon": 126.95},
+    "명동": {"lat": 37.5636, "lon": 126.9869,
+             "bb_minlat": 37.54, "bb_maxlat": 37.58, "bb_minlon": 126.97, "bb_maxlon": 127.00},
+    "이태원": {"lat": 37.5340, "lon": 126.9947,
+               "bb_minlat": 37.51, "bb_maxlat": 37.55, "bb_minlon": 126.97, "bb_maxlon": 127.02},
+    "대치": {"lat": 37.4967, "lon": 127.0613,
+             "bb_minlat": 37.47, "bb_maxlat": 37.52, "bb_minlon": 127.04, "bb_maxlon": 127.08},
+    "압구정": {"lat": 37.5272, "lon": 127.0286,
+               "bb_minlat": 37.51, "bb_maxlat": 37.54, "bb_minlon": 127.01, "bb_maxlon": 127.05},
+    "삼청": {"lat": 37.5825, "lon": 126.9810,
+             "bb_minlat": 37.56, "bb_maxlat": 37.60, "bb_minlon": 126.96, "bb_maxlon": 127.00},
+    # 광역시/도
     "제주": {"lat": 33.4996, "lon": 126.5312,
              "bb_minlat": 33.10, "bb_maxlat": 33.90, "bb_minlon": 126.10, "bb_maxlon": 127.00},
     "부산": {"lat": 35.1796, "lon": 129.0756,
@@ -119,6 +140,12 @@ _KR_REGION_FALLBACK: dict[str, dict] = {
              "bb_minlat": 35.05, "bb_maxlat": 35.30, "bb_minlon": 126.75, "bb_maxlon": 127.00},
     "대전": {"lat": 36.3504, "lon": 127.3845,
              "bb_minlat": 36.20, "bb_maxlat": 36.50, "bb_minlon": 127.25, "bb_maxlon": 127.55},
+    "경주": {"lat": 35.8562, "lon": 129.2247,
+             "bb_minlat": 35.70, "bb_maxlat": 36.05, "bb_minlon": 129.10, "bb_maxlon": 129.40},
+    "속초": {"lat": 38.2070, "lon": 128.5918,
+             "bb_minlat": 38.15, "bb_maxlat": 38.27, "bb_minlon": 128.55, "bb_maxlon": 128.65},
+    "강릉": {"lat": 37.7519, "lon": 128.8761,
+             "bb_minlat": 37.65, "bb_maxlat": 37.85, "bb_minlon": 128.80, "bb_maxlon": 128.95},
     "서울": {"lat": 37.5665, "lon": 126.9780,
              "bb_minlat": 37.40, "bb_maxlat": 37.70, "bb_minlon": 126.80, "bb_maxlon": 127.20},
 }
@@ -143,7 +170,7 @@ def geocode_region(query: str) -> dict | None:
 
 # 명시적 광역 지명 — 서울 폴백 없이 그 자체로 지오코딩
 _EXPLICIT_REGION = re.compile(
-    r"(제주|부산|대구|인천|광주|대전|울산|세종|전주|창원|청주|춘천|강릉|속초|경주|수원|성남|고양|용인|안산|화성|평택|의정부|포항|김해|전남|경남|경북|전북|충남|충북|강원|경기)"
+    r"(제주|부산|대구|인천|광주|대전|울산|세종|전주|창원|청주|춘천|강릉|속초|경주|수원|성남|고양|용인|안산|화성|평택|의정부|포항|김해|전남|경남|경북|전북|충남|충북|강원|경기|해운대|해변|해수욕|강남|홍대|명동|이태원|대치|압구정|삼청)"
 )
 
 
