@@ -151,6 +151,7 @@ def api_search():
         return jsonify({"error": "2년 이내 날짜만 검색할 수 있습니다."}), 400
 
     # 1) 지오코딩 먼저 — 반경 스케일 결정
+    _CODE_VER = "v3-20260614"  # 코드 버전 확인 (핫 Lambda 진단용)
     geo = geocode_region(query)
     clat_geo = geo["lat"] if geo else None
     clon_geo = geo["lon"] if geo else None
@@ -176,7 +177,13 @@ def api_search():
 
     all_listings: list[dict] = []
     last_error: str = ""
-    _dbg: list[str] = [f"geo={'Jeju' if geo and geo['lat'] < 34 else 'Seoul' if geo else 'None'} lat={clat_geo}"]
+    _geo_label = ('Jeju' if geo and geo['lat'] < 34
+                  else 'Seoul' if geo and geo['lat'] > 37
+                  else 'Other' if geo else 'None')
+    _dbg: list[str] = [
+        f"code={_CODE_VER}",
+        f"geo={_geo_label} lat={clat_geo} lon={clon_geo}",
+    ]
 
     if geo:
         # bbox 검색: IP와 무관하게 좌표로 검색 → 일본 결과 없음
