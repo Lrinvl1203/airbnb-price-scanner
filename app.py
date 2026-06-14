@@ -171,6 +171,7 @@ def api_search():
 
     all_listings: list[dict] = []
     last_error: str = ""
+    _dbg: list[str] = [f"geo={'Jeju' if geo and geo['lat'] < 34 else 'Seoul' if geo else 'None'} lat={clat_geo}"]
 
     if geo:
         # bbox 검색: IP와 무관하게 좌표로 검색 → 일본 결과 없음
@@ -181,11 +182,16 @@ def api_search():
                 raw = crawl_airbnb(query, checkin, checkout, geo=expanded_geo, max_results=120)
             except AirbnbError as exc:
                 last_error = str(exc)
+                _dbg.append(f"bk={bk} AirbnbError: {exc}")
                 continue
             except Exception as exc:
                 last_error = f"수집 중 오류: {exc}"
+                _dbg.append(f"bk={bk} Exception: {exc}")
                 continue
-            if _near_geo(raw) >= 3:
+            near_cnt = _near_geo(raw)
+            first_lat = raw[0]["latitude"] if raw else None
+            _dbg.append(f"bk={bk}: raw={len(raw)}, near={near_cnt}, first_lat={first_lat}")
+            if near_cnt >= 3:
                 all_listings = raw
                 break
             elif not all_listings:
@@ -266,7 +272,7 @@ def api_search():
             "더 많은 결과를 원하면 '강남', '마포구', '서울' 같이 더 넓은 지역명을 검색해 보세요."
         )
 
-    return jsonify({"listings": listings, "count": len(listings), "meta": meta, "notice": notice})
+    return jsonify({"listings": listings, "count": len(listings), "meta": meta, "notice": notice, "_dbg": _dbg})
 
 
 if __name__ == "__main__":
