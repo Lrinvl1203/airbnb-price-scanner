@@ -69,15 +69,27 @@ def api_search():
         return jsonify({"error": "지역명을 입력해주세요."}), 400
     if not checkin or not checkout:
         return jsonify({"error": "체크인/체크아웃 날짜를 선택해주세요."}), 400
-    if checkin >= checkout:
+    try:
+        d_checkin  = date.fromisoformat(checkin)
+        d_checkout = date.fromisoformat(checkout)
+    except ValueError:
+        return jsonify({"error": "날짜 형식이 올바르지 않습니다 (YYYY-MM-DD)."}), 400
+    if d_checkin >= d_checkout:
         return jsonify({"error": "체크아웃은 체크인보다 늦어야 합니다."}), 400
+    today = date.today()
+    if d_checkin < today:
+        return jsonify({"error": "체크인은 오늘 이후여야 합니다."}), 400
+    if (d_checkout - today).days > 730:
+        return jsonify({"error": "2년 이내 날짜만 검색할 수 있습니다."}), 400
 
-    # 1) Airbnb 수집 — 한국 결과가 부족하면 " 서울" 붙여 재시도
+    # 1) 지오코딩 먼저 — 반경 스케일 결정
+    geo = geocode_region(query)
+
+    # 2) Airbnb 키워드 수집 (관련성 높은 결과, 최대 120개)
     def _kr_count(lst: list[dict]) -> int:
         return sum(1 for l in lst if KR_LAT[0] <= l.get("latitude", 0) <= KR_LAT[1]
                    and KR_LON[0] <= l.get("longitude", 0) <= KR_LON[1])
 
-    # 시도할 쿼리 목록: 원본 → "원본+서울" (이미 대도시명 포함 시 하나만)
     q_candidates: list[str] = [query]
     if not any(c in query for c in ["서울", "부산", "대구", "인천", "제주", "광주", "대전"]):
         q_candidates.append(query + " 서울")
@@ -86,32 +98,42 @@ def api_search():
     last_error: str = ""
     for q_try in dict.fromkeys(q_candidates):
         try:
-            raw = crawl_airbnb(q_try, checkin, checkout, max_results=60)
+            raw = crawl_airbnb(q_try, checkin, checkout, max_results=120)
         except AirbnbError as exc:
             last_error = str(exc)
             continue
         except Exception as exc:
             last_error = f"수집 중 오류: {exc}"
             continue
-
         if _kr_count(raw) >= 3:
             all_listings = raw
             break
         elif not all_listings:
-            all_listings = raw  # 부족하더라도 일단 저장, 다음 쿼리로 개선 시도
+            all_listings = raw
 
     if not all_listings and last_error:
         return jsonify({"error": last_error}), 500
 
-    # 2) 필터링: 지오코딩 성공 → 반경 필터 / 실패 → 한국 범위 필터
-    geo = geocode_region(query)
+    # 3) 필터링: 지오코딩 성공 → 반경 필터 / 실패 → 한국 범위 필터
     meta: dict = {}
     listings: list[dict] = []
 
     if geo:
         clat, clon = geo["lat"], geo["lon"]
-        used_radius = 150
-        for radius in [30, 60, 150]:
+        # bbox 크기로 검색 지역 스케일 추정 → 반경 단계 결정
+        bb_span = max(
+            geo["bb_maxlat"] - geo["bb_minlat"],
+            geo["bb_maxlon"] - geo["bb_minlon"],
+        )
+        if bb_span < 0.05:          # 동(洞) 수준 (~5km)
+            radii = [5, 10, 25]
+        elif bb_span < 0.15:        # 구(區) 수준 (~15km)
+            radii = [15, 30, 60]
+        else:                        # 시/도 수준
+            radii = [30, 60, 150]
+
+        used_radius = radii[-1]
+        for radius in radii:
             listings = radius_filter(all_listings, clat, clon, radius)
             if len(listings) >= 3:
                 used_radius = radius
@@ -149,4 +171,6 @@ def api_search():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    import os
+    port = int(os.getenv("FLASK_PORT", "5001"))
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1", port=port)

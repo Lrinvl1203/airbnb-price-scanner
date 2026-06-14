@@ -426,7 +426,7 @@ function renderMap() {
         <div style="color:#64748b; margin-top:4px">${esc(l.room_type)} · 침실 ${l.bedrooms}개 · 침대 ${l.beds}개</div>
         <div style="color:#64748b">${l.rating ? "★ " + l.rating.toFixed(2) : "평점 없음"}</div>
         ${extra}
-        <a href="${esc(l.url)}" target="_blank"
+        <a href="${safeUrl(l.url)}" target="_blank"
            style="color:#3b82f6; font-size:11px; text-decoration:underline; margin-top:4px; display:inline-block">
           Airbnb에서 보기 →
         </a>
@@ -544,6 +544,7 @@ function destroyChart(id) {
 // ────────────────────────────────────────────
 const fw  = n => n.toLocaleString();
 const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const safeUrl = u => { try { const p = new URL(String(u ?? "")); return (p.protocol === "https:" || p.protocol === "http:") ? u : "#"; } catch { return "#"; } };
 
 // 만/억 단위 포맷 (59_real_estate 벤치마킹)
 function fmtMan(won) {
