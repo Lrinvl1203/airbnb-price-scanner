@@ -394,9 +394,10 @@ class AirbnbClient:
         checkin: str,
         checkout: str,
         cursor: str | None = None,
+        geo: dict | None = None,
     ) -> tuple[list[dict], list[str]]:
-        """키워드 기반 검색 (바운딩박스 없을 때 폴백)."""
-        params: dict[str, str] = {
+        """키워드 기반 검색. geo가 있으면 bbox 파라미터도 함께 전송해 지역 필터링."""
+        params: dict[str, Any] = {
             "tab_id": "home_tab",
             "query":  query,
             "checkin": checkin,
@@ -407,6 +408,17 @@ class AirbnbClient:
             "locale": "ko",
             "currency": "KRW",
         }
+        if geo:
+            params["ne_lat"]  = geo["bb_maxlat"]
+            params["ne_lng"]  = geo["bb_maxlon"]
+            params["sw_lat"]  = geo["bb_minlat"]
+            params["sw_lng"]  = geo["bb_minlon"]
+            bb_span = max(abs(geo["bb_maxlat"] - geo["bb_minlat"]),
+                         abs(geo["bb_maxlon"] - geo["bb_minlon"]))
+            params["zoom"] = (14 if bb_span < 0.05 else
+                              13 if bb_span < 0.2 else
+                              12 if bb_span < 0.5 else
+                              11 if bb_span < 1.0 else 10)
         if cursor:
             params["cursor"] = cursor
         data = self._fetch_raw(f"{BASE}/s/{urllib.parse.quote(query)}/homes", params)
@@ -434,24 +446,15 @@ class AirbnbClient:
                     return True  # done
             return False
 
-        if geo:
-            # 바운딩박스 검색
-            sr, all_cursors = self._fetch_bounds(geo, checkin, checkout)
-            if collect(sr):
-                return results
-            for cursor in all_cursors[1:max_pages]:
-                sr, _ = self._fetch_bounds(geo, checkin, checkout, cursor=cursor)
-                if collect(sr) or not sr:
-                    break
-        else:
-            # 키워드 검색 (폴백)
-            sr, all_cursors = self._fetch_query(query, checkin, checkout)
-            if collect(sr):
-                return results
-            for cursor in all_cursors[1:max_pages]:
-                sr, _ = self._fetch_query(query, checkin, checkout, cursor=cursor)
-                if collect(sr) or not sr:
-                    break
+        # keyword+bbox 병합 검색: geo가 있으면 bbox 파라미터를 keyword 요청에 포함
+        # (bbox-only 검색은 Vercel IP에서 Airbnb homepage로 redirect됨)
+        sr, all_cursors = self._fetch_query(query, checkin, checkout, geo=geo)
+        if collect(sr):
+            return results
+        for cursor in all_cursors[1:max_pages]:
+            sr, _ = self._fetch_query(query, checkin, checkout, cursor=cursor, geo=geo)
+            if collect(sr) or not sr:
+                break
 
         return results
 
