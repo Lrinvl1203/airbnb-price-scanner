@@ -268,11 +268,13 @@ async function doSearch() {
 
     searchMeta  = data.meta || {};
     allListings = data.listings;
-    buildFilterUI();
-    applyFilters();
 
     document.getElementById("statsSection").classList.remove("hidden");
     document.getElementById("mainSection").classList.remove("hidden");
+    map.invalidateSize();
+
+    buildFilterUI();
+    applyFilters();
 
   } catch (e) {
     showError("서버 연결 오류: " + e.message);
