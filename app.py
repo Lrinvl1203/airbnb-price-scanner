@@ -70,35 +70,36 @@ def diag():
     except Exception as e:
         result["steps"].append(f"geocode FAIL: {e}")
 
-    # 3) keyword+bbox 병합 검색 테스트
+    # 3) keyword+bbox 테스트 — 서울(홍대), 제주도, 부산
     try:
         from airbnb_fetch import AirbnbClient, _normalize
         import math as _math
         client = AirbnbClient(delay_min=0, delay_max=0)
-        clat0, clon0 = 37.5503, 126.9254
-        dlat = 10 / 111.0
-        dlon = 10 / (111.0 * _math.cos(_math.radians(clat0)))
-        test_geo = {
-            "lat": clat0, "lon": clon0,
-            "bb_minlat": clat0 - dlat, "bb_maxlat": clat0 + dlat,
-            "bb_minlon": clon0 - dlon, "bb_maxlon": clon0 + dlon,
-        }
 
-        def _test(q: str, g=None) -> str:
+        def _make_test_bbox(clat: float, clon: float, km: float) -> dict:
+            dlat = km / 111.0
+            dlon = km / (111.0 * _math.cos(_math.radians(clat)))
+            return {"lat": clat, "lon": clon,
+                    "bb_minlat": clat - dlat, "bb_maxlat": clat + dlat,
+                    "bb_minlon": clon - dlon, "bb_maxlon": clon + dlon}
+
+        def _test(q: str, clat: float, clon: float, km: float) -> str:
+            g = _make_test_bbox(clat, clon, km)
             sr, _ = client._fetch_query(q, "2026-06-21", "2026-06-22", geo=g)
             near = [_normalize(x, q) for x in sr]
-            kr = sum(1 for x in near if x and haversine(clat0, clon0, x.latitude, x.longitude) <= 100)
+            close = sum(1 for x in near if x and haversine(clat, clon, x.latitude, x.longitude) <= km * 2)
             first = next((x for x in near if x), None)
             first_loc = f"lat={first.latitude:.2f},lon={first.longitude:.2f}" if first else "none"
-            return f"{len(sr)} items, {kr} near Seoul, first={first_loc}"
+            return f"{len(sr)} items, {close} near, first={first_loc}"
 
-        t0 = _time.time()
-        r1 = _test("홍대")
-        result["steps"].append(f"keyword '홍대' only ({_time.time()-t0:.1f}s): {r1}")
-
-        t0 = _time.time()
-        r2 = _test("홍대", test_geo)
-        result["steps"].append(f"keyword '홍대' +bbox10km ({_time.time()-t0:.1f}s): {r2}")
+        for (q, clat, clon, km) in [
+            ("홍대",   37.5503, 126.9254, 10),
+            ("제주도",  33.4996, 126.5312, 25),
+            ("부산 해운대", 35.1631, 129.1631, 10),
+        ]:
+            t0 = _time.time()
+            info = _test(q, clat, clon, km)
+            result["steps"].append(f"'{q}' +bbox{km}km ({_time.time()-t0:.1f}s): {info}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
 
