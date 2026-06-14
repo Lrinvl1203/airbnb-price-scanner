@@ -70,51 +70,24 @@ def diag():
     except Exception as e:
         result["steps"].append(f"geocode FAIL: {e}")
 
-    # 3) bbox 검색 + keyword 검색 비교 (raw 구조 디버깅 포함)
+    # 3) keyword 검색 변형 테스트
     try:
-        from airbnb_fetch import AirbnbClient, _normalize, _extract
-        import math as _math
+        from airbnb_fetch import AirbnbClient, _normalize
         client = AirbnbClient(delay_min=0, delay_max=0)
         clat0, clon0 = 37.5503, 126.9254
-        dlat = 10 / 111.0
-        dlon = 10 / (111.0 * _math.cos(_math.radians(clat0)))
-        test_geo = {
-            "lat": clat0, "lon": clon0,
-            "bb_minlat": clat0 - dlat, "bb_maxlat": clat0 + dlat,
-            "bb_minlon": clon0 - dlon, "bb_maxlon": clon0 + dlon,
-        }
-        # bbox raw fetch (bypass _extract to see structure)
-        t0 = _time.time()
-        client._pause = lambda: None  # disable sleep
-        raw_data = client._fetch_raw(
-            "https://www.airbnb.co.kr/s/homes",
-            {
-                "ne_lat": test_geo["bb_maxlat"], "ne_lng": test_geo["bb_maxlon"],
-                "sw_lat": test_geo["bb_minlat"], "sw_lng": test_geo["bb_minlon"],
-                "zoom": 13, "search_type": "user_map_move", "tab_id": "home_tab",
-                "checkin": "2026-06-21", "checkout": "2026-06-22", "adults": "1",
-                "price_filter_input_type": "0", "channel": "EXPLORE",
-            }
-        )
-        elapsed = _time.time() - t0
-        top_keys = list(raw_data.keys()) if isinstance(raw_data, dict) else str(type(raw_data))
-        result["steps"].append(f"bbox raw keys ({elapsed:.1f}s): {top_keys[:5]}")
-        sr, cursors = _extract(raw_data)
-        result["steps"].append(f"bbox extract: {len(sr)} items, {len(cursors)} cursors")
-        if sr:
-            n = _normalize(sr[0], "홍대")
-            if n:
-                result["steps"].append(f"bbox_first: lat={n.latitude}, lon={n.longitude}, title={n.title[:40]}")
-        else:
-            # 구조 더 파보기
-            if "niobeClientData" in raw_data:
-                try:
-                    path = raw_data["niobeClientData"][0][1]["data"]["presentation"]
-                    result["steps"].append(f"presentation keys: {list(path.keys())[:5]}")
-                except Exception as pe:
-                    result["steps"].append(f"niobeClientData path err: {pe}")
-            else:
-                result["steps"].append(f"no niobeClientData, keys: {list(raw_data.keys())[:8]}")
+
+        def _test_query(q: str) -> str:
+            sr, _ = client._fetch_query(q, "2026-06-21", "2026-06-22")
+            near = [_normalize(x, q) for x in sr]
+            kr = sum(1 for x in near if x and haversine(clat0, clon0, x.latitude, x.longitude) <= 100)
+            first = next((x for x in near if x), None)
+            first_loc = f"lat={first.latitude:.2f},lon={first.longitude:.2f}" if first else "none"
+            return f"{len(sr)} items, {kr} near Seoul, first={first_loc}"
+
+        for test_q in ["홍대", "홍대 서울", "서울 마포구 홍대"]:
+            t0 = _time.time()
+            info = _test_query(test_q)
+            result["steps"].append(f"keyword '{test_q}' ({_time.time()-t0:.1f}s): {info}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
 
