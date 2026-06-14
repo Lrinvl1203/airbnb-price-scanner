@@ -62,15 +62,20 @@ def diag():
         result["steps"].append(f"curl_cffi IMPORT FAIL: {e}")
         return jsonify(result)
 
-    # 2) Nominatim geocoding — 여러 쿼리 테스트
+    # 2) Nominatim geocoding — raw 응답 디버깅
     try:
+        import urllib.request as _ur
+        import urllib.parse as _up
         for gq in ["홍대", "제주도", "부산 해운대"]:
-            t0 = _time.time()
-            geo_r = geocode_region(gq)
-            if geo_r:
-                result["steps"].append(f"geocode '{gq}': lat={geo_r['lat']:.2f},lon={geo_r['lon']:.2f} ({_time.time()-t0:.1f}s)")
-            else:
-                result["steps"].append(f"geocode '{gq}': FAILED ({_time.time()-t0:.1f}s)")
+            raw_url = f"https://nominatim.openstreetmap.org/search?q={_up.quote(gq)}&format=json&limit=3&countrycodes=kr"
+            _req = _ur.Request(raw_url, headers={"User-Agent": "AirbnbPriceScanner/1.0", "Accept": "application/json"})
+            try:
+                with _ur.urlopen(_req, timeout=8) as _rr:
+                    _data = __import__("json").loads(_rr.read().decode())
+                items_info = [(d.get("lat","?"), d.get("lon","?"), d.get("class","?"), d.get("place_rank","?"), d.get("display_name","")[:30]) for d in _data[:2]]
+                result["steps"].append(f"nominatim '{gq}': {items_info}")
+            except Exception as _e:
+                result["steps"].append(f"nominatim '{gq}' FAIL: {_e}")
         geo = geocode_region("홍대")
     except Exception as e:
         result["steps"].append(f"geocode FAIL: {e}")
