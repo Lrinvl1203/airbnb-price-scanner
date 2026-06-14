@@ -355,12 +355,26 @@ class AirbnbClient:
         cursor: str | None = None,
     ) -> tuple[list[dict], list[str]]:
         """바운딩박스 기반 지도 검색."""
+        bb_span = max(
+            abs(geo["bb_maxlat"] - geo["bb_minlat"]),
+            abs(geo["bb_maxlon"] - geo["bb_minlon"]),
+        )
+        if bb_span < 0.05:
+            zoom = 14
+        elif bb_span < 0.2:
+            zoom = 13
+        elif bb_span < 0.5:
+            zoom = 12
+        elif bb_span < 1.0:
+            zoom = 11
+        else:
+            zoom = 10
         params: dict[str, Any] = {
             "ne_lat":  geo["bb_maxlat"],
             "ne_lng":  geo["bb_maxlon"],
             "sw_lat":  geo["bb_minlat"],
             "sw_lng":  geo["bb_minlon"],
-            "zoom":    14,
+            "zoom":    zoom,
             "search_type": "user_map_move",
             "tab_id":  "home_tab",
             "checkin": checkin,

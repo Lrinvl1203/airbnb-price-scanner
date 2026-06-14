@@ -70,21 +70,29 @@ def diag():
     except Exception as e:
         result["steps"].append(f"geocode FAIL: {e}")
 
-    # 3) Airbnb 1페이지만 (delay 없이)
+    # 3) bbox 검색 테스트 (keyword 검색 대신 좌표로 직접)
     try:
         from airbnb_fetch import AirbnbClient, _normalize
+        import math as _math
         client = AirbnbClient(delay_min=0, delay_max=0)
+        # 홍대 중심 10km bbox
+        clat0, clon0 = 37.5503, 126.9254
+        dlat = 10 / 111.0
+        dlon = 10 / (111.0 * _math.cos(_math.radians(clat0)))
+        test_geo = {
+            "lat": clat0, "lon": clon0,
+            "bb_minlat": clat0 - dlat, "bb_maxlat": clat0 + dlat,
+            "bb_minlon": clon0 - dlon, "bb_maxlon": clon0 + dlon,
+        }
         t0 = _time.time()
-        sr, cursors = client._fetch_query("홍대", "2026-06-21", "2026-06-22")
-        result["steps"].append(f"airbnb fetch: {len(sr)} items, {len(cursors)} cursors ({_time.time()-t0:.1f}s)")
+        sr, cursors = client._fetch_bounds(test_geo, "2026-06-21", "2026-06-22")
+        result["steps"].append(f"bbox fetch (10km): {len(sr)} items ({_time.time()-t0:.1f}s)")
         if sr:
             n = _normalize(sr[0], "홍대")
             if n:
                 result["steps"].append(f"first_item: lat={n.latitude}, lon={n.longitude}, title={n.title[:40]}")
-            # 서울 홍대 기준 100km 내 몇 개?
-            seoul_lat, seoul_lon = 37.5503, 126.9254
             near = [_normalize(x, "홍대") for x in sr]
-            kr_count = sum(1 for x in near if x and haversine(seoul_lat, seoul_lon, x.latitude, x.longitude) <= 100)
+            kr_count = sum(1 for x in near if x and haversine(clat0, clon0, x.latitude, x.longitude) <= 100)
             result["steps"].append(f"items within 100km of Hongdae: {kr_count}/{len(sr)}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
@@ -131,7 +139,7 @@ def api_search():
     clat_geo = geo["lat"] if geo else None
     clon_geo = geo["lon"] if geo else None
 
-    # 2) Airbnb 키워드 수집 (관련성 높은 결과, 최대 120개)
+    # 2) Airbnb 수집 — geo가 있으면 좌표 bbox 검색 (IP 무관), 없으면 키워드 폴백
     def _near_geo(lst: list[dict]) -> int:
         """geo 중심 100km 이내 매물 수 (일본 등 원격지 필터)."""
         if clat_geo is None:
@@ -140,26 +148,56 @@ def api_search():
         return sum(1 for l in with_coords(lst)
                    if haversine(clat_geo, clon_geo, l["latitude"], l["longitude"]) <= 100)
 
-    q_candidates: list[str] = [query]
-    if not any(c in query for c in ["서울", "부산", "대구", "인천", "제주", "광주", "대전"]):
-        q_candidates.append(query + " 서울")
+    def _make_bbox(clat: float, clon: float, radius_km: float) -> dict:
+        """중심점 + 반경(km)에서 Airbnb bbox dict 생성."""
+        dlat = radius_km / 111.0
+        dlon = radius_km / (111.0 * math.cos(math.radians(clat)))
+        return {
+            "lat": clat, "lon": clon,
+            "bb_minlat": clat - dlat, "bb_maxlat": clat + dlat,
+            "bb_minlon": clon - dlon, "bb_maxlon": clon + dlon,
+        }
 
     all_listings: list[dict] = []
     last_error: str = ""
-    for q_try in dict.fromkeys(q_candidates):
-        try:
-            raw = crawl_airbnb(q_try, checkin, checkout, max_results=120)
-        except AirbnbError as exc:
-            last_error = str(exc)
-            continue
-        except Exception as exc:
-            last_error = f"수집 중 오류: {exc}"
-            continue
-        if _near_geo(raw) >= 3:
-            all_listings = raw
-            break
-        elif not all_listings:
-            all_listings = raw
+
+    if geo:
+        # bbox 검색: IP와 무관하게 좌표로 검색 → 일본 결과 없음
+        bbox_radii = [10, 25, 50]
+        for bk in bbox_radii:
+            expanded_geo = _make_bbox(clat_geo, clon_geo, bk)
+            try:
+                raw = crawl_airbnb(query, checkin, checkout, geo=expanded_geo, max_results=120)
+            except AirbnbError as exc:
+                last_error = str(exc)
+                continue
+            except Exception as exc:
+                last_error = f"수집 중 오류: {exc}"
+                continue
+            if _near_geo(raw) >= 3:
+                all_listings = raw
+                break
+            elif not all_listings:
+                all_listings = raw
+    else:
+        # geo 없음 → 키워드 검색 (폴백)
+        q_candidates: list[str] = [query]
+        if not any(c in query for c in ["서울", "부산", "대구", "인천", "제주", "광주", "대전"]):
+            q_candidates.append(query + " 서울")
+        for q_try in dict.fromkeys(q_candidates):
+            try:
+                raw = crawl_airbnb(q_try, checkin, checkout, max_results=120)
+            except AirbnbError as exc:
+                last_error = str(exc)
+                continue
+            except Exception as exc:
+                last_error = f"수집 중 오류: {exc}"
+                continue
+            if _near_geo(raw) >= 3:
+                all_listings = raw
+                break
+            elif not all_listings:
+                all_listings = raw
 
     if not all_listings and last_error:
         return jsonify({"error": last_error}), 500
