@@ -78,7 +78,14 @@ def diag():
         sr, cursors = client._fetch_query("홍대", "2026-06-21", "2026-06-22")
         result["steps"].append(f"airbnb fetch: {len(sr)} items, {len(cursors)} cursors ({_time.time()-t0:.1f}s)")
         if sr:
-            result["steps"].append(f"first_item_keys: {list(sr[0].keys())[:6]}")
+            import json as _json
+            item0 = sr[0]
+            result["steps"].append(f"first_item_keys: {list(item0.keys())}")
+            result["steps"].append(f"has_demandStayListing: {'demandStayListing' in item0}")
+            # normalize 테스트
+            from airbnb_fetch import _normalize
+            n = _normalize(item0, "홍대")
+            result["steps"].append(f"normalize_result: {n}")
     except Exception as e:
         result["steps"].append(f"airbnb FAIL: {e}")
 
