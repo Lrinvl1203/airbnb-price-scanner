@@ -60,12 +60,12 @@ def normalize_query(query: str) -> str:
 
 
 def _geocode_one(q: str) -> dict | None:
-    """Nominatim 단일 쿼리 (한국 우선 → 전체)."""
+    """Nominatim 단일 쿼리 (한국 우선 → 전체). 행정구역(place_rank≤25)만 수락."""
     for extra in [{"countrycodes": "kr"}, {}]:
         params: dict[str, Any] = {
             "q": q,
             "format": "json",
-            "limit": "1",
+            "limit": "5",  # 여러 결과 중 행정구역 우선 선택
             **extra,
         }
         url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
@@ -81,16 +81,24 @@ def _geocode_one(q: str) -> dict | None:
                 data = json.loads(r.read().decode("utf-8"))
             if not data:
                 continue
-            item = data[0]
-            bb = item.get("boundingbox") or []
-            return {
-                "lat": float(item["lat"]),
-                "lon": float(item["lon"]),
-                "bb_minlat": float(bb[0]) if len(bb) >= 4 else float(item["lat"]) - 0.02,
-                "bb_maxlat": float(bb[1]) if len(bb) >= 4 else float(item["lat"]) + 0.02,
-                "bb_minlon": float(bb[2]) if len(bb) >= 4 else float(item["lon"]) - 0.02,
-                "bb_maxlon": float(bb[3]) if len(bb) >= 4 else float(item["lon"]) + 0.02,
-            }
+            # 행정구역(place_rank 1-25)만 사용 — 식당/POI(30+) 제외
+            admin_types = {"administrative", "country", "state", "county",
+                           "city", "town", "village", "suburb", "island",
+                           "archipelago", "region", "municipality"}
+            for item in data:
+                rank = int(item.get("place_rank") or 99)
+                osm_class = item.get("class", "") or ""
+                if rank > 25 and osm_class not in ("boundary", "place", "natural"):
+                    continue  # 비행정구역 (식당, 상점 등) 스킵
+                bb = item.get("boundingbox") or []
+                return {
+                    "lat": float(item["lat"]),
+                    "lon": float(item["lon"]),
+                    "bb_minlat": float(bb[0]) if len(bb) >= 4 else float(item["lat"]) - 0.02,
+                    "bb_maxlat": float(bb[1]) if len(bb) >= 4 else float(item["lat"]) + 0.02,
+                    "bb_minlon": float(bb[2]) if len(bb) >= 4 else float(item["lon"]) - 0.02,
+                    "bb_maxlon": float(bb[3]) if len(bb) >= 4 else float(item["lon"]) + 0.02,
+                }
         except Exception:
             pass
     return None
