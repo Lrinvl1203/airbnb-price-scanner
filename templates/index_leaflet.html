@@ -6,7 +6,8 @@
   <title>Airbnb 시세 스캐너</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=8h9xzemrv9"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
   <style>
@@ -26,6 +27,7 @@
       border-color: #fda4af;
       color: #e11d48;
     }
+    .leaflet-popup-content { margin: 10px 14px; min-width: 180px; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -46,7 +48,7 @@
   <div class="max-w-7xl mx-auto px-4 py-4">
     <div class="flex flex-wrap gap-3 items-end">
 
-      <div class="flex-1 min-w-[180px]">
+      <div class="w-full sm:flex-1 sm:min-w-[180px]">
         <label class="block text-xs font-medium text-gray-600 mb-1">지역명</label>
         <input id="query" type="text" placeholder="예: 대치동, 홍대, 강남, 해운대"
                class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
@@ -145,15 +147,15 @@
 
         <!-- 가격 범위 -->
         <div>
-          <p class="text-xs text-gray-400 uppercase font-medium mb-2">가격 범위 (1박, 원)</p>
+          <p class="text-xs text-gray-400 uppercase font-medium mb-2">가격 범위 (1박, 만원)</p>
           <div class="flex items-center gap-1">
-            <input id="priceMin" type="number" placeholder="최저" step="1000"
+            <input id="priceMin" type="number" placeholder="최저" step="0.5" min="0"
                    class="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-rose-400"
-                   onchange="applyFilters()" />
+                   oninput="applyFilters()" />
             <span class="text-gray-300 text-xs">~</span>
-            <input id="priceMax" type="number" placeholder="최고" step="1000"
+            <input id="priceMax" type="number" placeholder="최고" step="0.5" min="0"
                    class="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-rose-400"
-                   onchange="applyFilters()" />
+                   oninput="applyFilters()" />
           </div>
         </div>
 
@@ -190,7 +192,6 @@
         <span class="text-xs text-gray-400">
           <span style="display:inline-block;width:10px;height:2px;border:1.5px dashed #f43f5e;vertical-align:middle;margin-right:2px"></span>검색 반경
         </span>
-        <span class="text-[10px] text-gray-400 ml-auto">지하철역은 지도에서 자동 표시됩니다</span>
       </div>
     </div>
   </div>
@@ -216,45 +217,6 @@
   </div>
 </div><!-- /mainSection -->
 
-<!-- ── 숙소 목록 테이블 ── -->
-<div id="tableSection" class="hidden max-w-7xl mx-auto px-4 pb-8">
-  <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
-    <!-- 테이블 헤더 바 -->
-    <div class="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-      <h4 class="text-sm font-semibold text-gray-700">
-        숙소 목록
-        <span id="tableCount" class="text-gray-400 font-normal text-xs ml-1"></span>
-      </h4>
-      <button id="excelBtn" onclick="downloadExcel()"
-              class="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        엑셀 다운로드
-      </button>
-    </div>
-    <!-- 스크롤 가능 테이블 -->
-    <div class="overflow-x-auto">
-      <table class="w-full text-xs">
-        <thead class="sticky top-0 z-10">
-          <tr class="bg-[#2E75B6] text-white">
-            <th class="px-3 py-2 text-center font-semibold w-8">#</th>
-            <th class="px-3 py-2 text-left font-semibold min-w-[200px]">숙소명</th>
-            <th class="px-3 py-2 text-center font-semibold">유형</th>
-            <th class="px-3 py-2 text-center font-semibold">침실</th>
-            <th class="px-3 py-2 text-center font-semibold">침대</th>
-            <th class="px-3 py-2 text-center font-semibold">평점</th>
-            <th class="px-3 py-2 text-right font-semibold">1박 가격</th>
-            <th class="px-3 py-2 text-right font-semibold">총 가격</th>
-            <th class="px-3 py-2 text-center font-semibold">링크</th>
-          </tr>
-        </thead>
-        <tbody id="listingTableBody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 <script>
 // ────────────────────────────────────────────
 //  전역 상태
@@ -262,27 +224,18 @@
 let allListings  = [];
 let filtered     = [];
 const charts     = {};
-let mapMarkers   = [];   // [{marker, iw}]
-let radiusCircle = null;
-let searchMeta   = {};
-let currentIW    = null;
-let currentSearch = { query: "", checkin: "", checkout: "", nights: 0 };
+let mapMarkers   = [];
+let radiusCircle = null;   // 검색 반경 원
+let searchMeta   = {};     // 마지막 검색 meta (center, radius_km)
 
 // ────────────────────────────────────────────
-//  네이버 지도 초기화 (서울 중심)
+//  지도 초기화 (서울 중심)
 // ────────────────────────────────────────────
-const map = new naver.maps.Map(document.getElementById("map"), {
-  center: new naver.maps.LatLng(37.5665, 126.9780),
-  zoom: 11,
-});
-
-function makeMarkerIcon(color) {
-  return {
-    content: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3);"></div>`,
-    size: new naver.maps.Size(16, 16),
-    anchor: new naver.maps.Point(8, 8),
-  };
-}
+const map = L.map("map").setView([37.5665, 126.9780], 13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap contributors",
+  maxZoom: 18,
+}).addTo(map);
 
 // ────────────────────────────────────────────
 //  검색
@@ -316,20 +269,12 @@ async function doSearch() {
     searchMeta  = data.meta || {};
     allListings = data.listings;
 
-    const d1 = new Date(checkin), d2 = new Date(checkout);
-    currentSearch = {
-      query, checkin, checkout,
-      nights: Math.round((d2 - d1) / 86400000),
-    };
-
     document.getElementById("statsSection").classList.remove("hidden");
     document.getElementById("mainSection").classList.remove("hidden");
-    document.getElementById("tableSection").classList.remove("hidden");
+    map.invalidateSize();
+
     buildFilterUI();
-    setTimeout(() => {
-      naver.maps.Event.trigger(map, 'resize');
-      applyFilters();
-    }, 50);
+    applyFilters();
 
   } catch (e) {
     showError("서버 연결 오류: " + e.message);
@@ -358,10 +303,11 @@ function buildFilterUI() {
     <button class="filter-chip on" data-val="${b}" onclick="toggleChip(this)">${b}개</button>
   `).join("");
 
-  // 가격 기본값 (원 단위 입력, 만 단위로 힌트 표시)
+  // 가격 기본값 (만원 단위 입력, 소수 1자리 표시)
   const prices = allListings.map(l => l.price_per_night).filter(p => p > 0);
-  document.getElementById("priceMin").placeholder = fmtMan(Math.min(...prices));
-  document.getElementById("priceMax").placeholder = fmtMan(Math.max(...prices));
+  const toMan = w => +(w / 10000).toFixed(1);
+  document.getElementById("priceMin").placeholder = toMan(Math.min(...prices));
+  document.getElementById("priceMax").placeholder = toMan(Math.max(...prices));
 }
 
 function toggleChip(btn) {
@@ -375,15 +321,17 @@ function toggleChip(btn) {
 function applyFilters() {
   const selTypes = [...document.querySelectorAll(".rt-cb:checked")].map(el => el.value);
   const selBeds  = [...document.querySelectorAll("#bedroomFilter .filter-chip.on")].map(b => parseInt(b.dataset.val));
-  const pMin     = parseFloat(document.getElementById("priceMin").value) || 0;
-  const pMax     = parseFloat(document.getElementById("priceMax").value) || Infinity;
+  const pMinMan  = parseFloat(document.getElementById("priceMin").value);
+  const pMaxMan  = parseFloat(document.getElementById("priceMax").value);
+  const pMin     = pMinMan > 0 ? pMinMan * 10000 : 0;
+  const pMax     = pMaxMan > 0 ? pMaxMan * 10000 : Infinity;
   const minRat   = parseFloat(document.getElementById("ratingFilter").value) || 0;
 
   filtered = allListings.filter(l => {
     if (selTypes.length && !selTypes.includes(l.room_type)) return false;
     if (selBeds.length  && !selBeds.includes(l.bedrooms))  return false;
-    if (l.price_per_night < pMin) return false;
-    if (l.price_per_night > pMax) return false;
+    if (pMin > 0 && l.price_per_night < pMin) return false;
+    if (pMax < Infinity && l.price_per_night > pMax) return false;
     if (minRat > 0 && l.rating < minRat) return false;
     return true;
   });
@@ -391,7 +339,6 @@ function applyFilters() {
   renderStats();
   renderMap();
   renderCharts();
-  renderTable();
 }
 
 function resetFilters() {
@@ -424,32 +371,29 @@ function renderStats() {
 //  지도
 // ────────────────────────────────────────────
 function renderMap() {
-  // 이전 마커·원·정보창 제거
-  mapMarkers.forEach(({ marker, iw }) => { iw.close(); marker.setMap(null); });
+  // 이전 마커·원 제거
+  mapMarkers.forEach(m => m.remove());
   mapMarkers = [];
-  if (radiusCircle) { radiusCircle.setMap(null); radiusCircle = null; }
-  if (currentIW) { currentIW.close(); currentIW = null; }
+  if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
 
   const geo = filtered.filter(l => Math.abs(l.latitude) > 0.1 && Math.abs(l.longitude) > 0.1);
   if (!geo.length) return;
 
-  const bounds = new naver.maps.LatLngBounds();
-
   // ① 검색 반경 원 (지오코딩 성공 시)
+  const layers = [];
   if (searchMeta.center_lat && searchMeta.radius_km) {
-    const center = new naver.maps.LatLng(searchMeta.center_lat, searchMeta.center_lon);
-    radiusCircle = new naver.maps.Circle({
-      map,
-      center,
-      radius:        searchMeta.radius_km * 1000,
-      strokeWeight:  2,
-      strokeColor:   '#f43f5e',
-      strokeOpacity: 0.7,
-      strokeStyle:   'shortdash',
-      fillColor:     '#fda4af',
-      fillOpacity:   0.07,
-    });
-    bounds.extend(center);
+    radiusCircle = L.circle(
+      [searchMeta.center_lat, searchMeta.center_lon],
+      {
+        radius:      searchMeta.radius_km * 1000,
+        color:       "#f43f5e",
+        fillColor:   "#fda4af",
+        fillOpacity: 0.07,
+        weight:      1.5,
+        dashArray:   "6 4",
+      }
+    ).addTo(map);
+    layers.push(radiusCircle);
   }
 
   // ② 좌표 기준 중복 제거 (같은 건물 여러 매물 → 가장 저렴한 것만 표시)
@@ -469,50 +413,35 @@ function renderMap() {
 
   // ③ 마커 렌더링
   unique.forEach(l => {
-    const latlng = new naver.maps.LatLng(l.latitude, l.longitude);
-    bounds.extend(latlng);
-
     const group = coordMap[`${l.latitude.toFixed(4)},${l.longitude.toFixed(4)}`];
-    const extra = group.length > 1
-      ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px">같은 위치 ${group.length}개 매물</div>`
-      : "";
+    const extra = group.length > 1 ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px">같은 위치 ${group.length}개 매물</div>` : "";
 
     const color  = priceColor(l.price_per_night, minP, maxP);
-    const marker = new naver.maps.Marker({
-      position: latlng,
-      map,
-      icon: makeMarkerIcon(color),
-    });
+    const marker = L.circleMarker([l.latitude, l.longitude], {
+      radius: 8, fillColor: color, color: "#fff",
+      weight: 1.5, opacity: 1, fillOpacity: 0.88,
+    }).addTo(map);
 
-    const iw = new naver.maps.InfoWindow({
-      content: `<div style="padding:10px 14px;min-width:180px;font-size:13px;line-height:1.5;background:white;border-radius:8px;">
-        <div style="font-weight:600;margin-bottom:3px">${esc(l.title)}</div>
-        <div style="color:#e11d48;font-weight:700;font-size:15px">${fmtManKr(l.price_per_night)}<span style="font-size:11px;font-weight:400">/박</span></div>
-        <div style="color:#64748b;margin-top:4px">${esc(l.room_type)} · 침실 ${l.bedrooms}개 · 침대 ${l.beds}개</div>
+    marker.bindPopup(`
+      <div style="font-size:13px; line-height:1.5">
+        <div style="font-weight:600; margin-bottom:3px">${esc(l.title)}</div>
+        <div style="color:#e11d48; font-weight:700; font-size:15px">${fmtManKr(l.price_per_night)}<span style="font-size:11px; font-weight:400">/박</span></div>
+        <div style="color:#64748b; margin-top:4px">${esc(l.room_type)} · 침실 ${l.bedrooms}개 · 침대 ${l.beds}개</div>
         <div style="color:#64748b">${l.rating ? "★ " + l.rating.toFixed(2) : "평점 없음"}</div>
         ${extra}
-        <a href="${safeUrl(l.url)}" target="_blank" rel="noopener"
-           style="color:#3b82f6;font-size:11px;text-decoration:underline;margin-top:4px;display:inline-block">
+        <a href="${esc(l.url)}" target="_blank"
+           style="color:#3b82f6; font-size:11px; text-decoration:underline; margin-top:4px; display:inline-block">
           Airbnb에서 보기 →
         </a>
-      </div>`,
-      borderWidth: 0,
-      disableAnchor: true,
-      backgroundColor: 'transparent',
-    });
+      </div>`);
 
-    naver.maps.Event.addListener(marker, 'click', function () {
-      if (currentIW) currentIW.close();
-      currentIW = iw;
-      iw.open(map, marker);
-    });
-
-    mapMarkers.push({ marker, iw });
+    mapMarkers.push(marker);
+    layers.push(marker);
   });
 
-  // ④ 뷰 맞추기
-  if (unique.length > 0) {
-    map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+  // ④ 뷰 맞추기 (원 + 마커 전체 포함)
+  if (layers.length) {
+    map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
   }
 }
 
@@ -618,7 +547,6 @@ function destroyChart(id) {
 // ────────────────────────────────────────────
 const fw  = n => n.toLocaleString();
 const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const safeUrl = u => { try { const p = new URL(String(u ?? "")); return (p.protocol === "https:" || p.protocol === "http:") ? u : "#"; } catch { return "#"; } };
 
 // 만/억 단위 포맷 (59_real_estate 벤치마킹)
 function fmtMan(won) {
@@ -659,94 +587,6 @@ function showNotice(msg) {
 }
 function hideNotice() {
   document.getElementById("noticeMsg").classList.add("hidden");
-}
-
-// ────────────────────────────────────────────
-//  숙소 목록 테이블
-// ────────────────────────────────────────────
-function renderTable() {
-  const tbody = document.getElementById("listingTableBody");
-  const nights = currentSearch.nights || 0;
-
-  document.getElementById("tableCount").textContent =
-    `(${filtered.length.toLocaleString()}개)`;
-
-  if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-8 text-gray-400">표시할 숙소가 없습니다.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = filtered.map((l, i) => {
-    const alt    = i % 2 === 1 ? "bg-[#EBF3FB]" : "bg-white";
-    const total  = nights > 0 ? l.price_per_night * nights : null;
-    const rating = l.rating ? "★ " + l.rating.toFixed(2) : "—";
-    const safeU  = safeUrl(l.url);
-
-    return `<tr class="${alt} hover:bg-rose-50 transition-colors">
-      <td class="px-3 py-2 text-center text-gray-400">${i + 1}</td>
-      <td class="px-3 py-2 max-w-[260px]">
-        <div class="truncate font-medium text-gray-800" title="${esc(l.title)}">${esc(l.title)}</div>
-        <div class="text-[10px] text-gray-400">${esc(l.property_type || "")}</div>
-      </td>
-      <td class="px-3 py-2 text-center text-gray-600">${esc(l.room_type || "—")}</td>
-      <td class="px-3 py-2 text-center text-gray-600">${l.bedrooms ?? "—"}</td>
-      <td class="px-3 py-2 text-center text-gray-600">${l.beds ?? "—"}</td>
-      <td class="px-3 py-2 text-center ${l.rating >= 4.8 ? "text-amber-500 font-semibold" : "text-gray-600"}">${rating}</td>
-      <td class="px-3 py-2 text-right font-semibold text-rose-600">${fmtManKr(l.price_per_night)}</td>
-      <td class="px-3 py-2 text-right text-gray-700">${total !== null ? fmtManKr(total) : "—"}</td>
-      <td class="px-3 py-2 text-center">
-        <a href="${safeU}" target="_blank" rel="noopener"
-           class="inline-block text-blue-500 hover:text-blue-700 underline text-[11px]">보기 →</a>
-      </td>
-    </tr>`;
-  }).join("");
-}
-
-// ────────────────────────────────────────────
-//  엑셀 다운로드
-// ────────────────────────────────────────────
-async function downloadExcel() {
-  if (!filtered.length) return;
-  const btn = document.getElementById("excelBtn");
-  btn.disabled = true;
-  btn.textContent = "생성 중…";
-
-  try {
-    const res = await fetch("/api/export", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        listings: filtered,
-        query:    currentSearch.query,
-        checkin:  currentSearch.checkin,
-        checkout: currentSearch.checkout,
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert("엑셀 생성 오류: " + (err.error || res.statusText));
-      return;
-    }
-
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    const cd   = res.headers.get("Content-Disposition") || "";
-    const match = cd.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
-    a.download = match ? decodeURIComponent(match[1].trim().replace(/"/g, "")) :
-                 `airbnb_${currentSearch.query}_${currentSearch.checkin}_${currentSearch.checkout}.xlsx`;
-    a.href = url;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    alert("다운로드 오류: " + e.message);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 엑셀 다운로드`;
-  }
 }
 
 // Enter 키 검색

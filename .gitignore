@@ -40,5 +40,27 @@ first_item*.json
 
 # Vercel
 .vercel/
-
 .vercel
+
+# Generated output (산출물 — 로컬 전용)
+output/
+_scratch/
+
+# Backup folders
+_v1_backup/
+_v2_market_report_backup/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Test screenshots / temp files
+_color_test*.xlsx
+_color_test*.png
+_colortest*.png
+_excel_*.png
+_final_*.png
+_screen_*.png
+map_*.png
+service_screenshot.png
+app_icon.png
+airbnb_price_analyzer.zip
