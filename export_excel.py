@@ -18,6 +18,23 @@ import xlsxwriter
 sys.path.insert(0, str(Path(__file__).parent))
 from airbnb_fetch import crawl_airbnb, geocode_region
 
+# 이모지·특수기호 제거 (Airbnb 숙소명에 포함될 수 있음)
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FFFF"   # 보조 다국어 면 (이모지 대부분)
+    "\U00002600-\U000027BF"   # 기타 기호
+    "\U0001F900-\U0001F9FF"   # 보충 기호
+    "\U0000200D"              # ZWJ
+    "\U0000FE0F"              # 변형 선택자
+    "]+",
+    flags=re.UNICODE,
+)
+
+def _strip_emoji(text: object) -> str:
+    if not isinstance(text, str):
+        return str(text) if text is not None else ""
+    return _EMOJI_RE.sub("", text).strip()
+
 
 def _fix_colors(xlsx_path: Path) -> None:
     """
@@ -210,9 +227,9 @@ def build_excel(
 
         field_map: dict[str, object] = {
             "idx":             ri + 1,
-            "title":           lst["title"],
-            "room_type":       lst["room_type"],
-            "property_type":   lst["property_type"],
+            "title":           _strip_emoji(lst["title"]),
+            "room_type":       _strip_emoji(lst["room_type"]),
+            "property_type":   _strip_emoji(lst["property_type"]),
             "bedrooms":        lst["bedrooms"] if lst["bedrooms"] else 0,
             "beds":            lst["beds"] if lst["beds"] else 0,
             "bathrooms":       lst["bathrooms"] if lst["bathrooms"] else 0.0,
@@ -222,7 +239,7 @@ def build_excel(
             "url":             lst["url"],
             "latitude":        lst["latitude"],
             "longitude":       lst["longitude"],
-            "region_query":    lst["region_query"],
+            "region_query":    _strip_emoji(lst["region_query"]),
         }
 
         for ci, (_, field, _) in enumerate(COLS):
@@ -302,11 +319,7 @@ def build_excel(
     print(f"✅ 저장 완료: {out_path}")
 
 
-def main() -> None:
-    query    = sys.argv[1] if len(sys.argv) > 1 else "충무로"
-    checkin  = sys.argv[2] if len(sys.argv) > 2 else "2026-09-08"
-    checkout = sys.argv[3] if len(sys.argv) > 3 else "2026-09-10"
-
+def run(query: str, checkin: str, checkout: str) -> None:
     print(f"[1/3] 지오코딩: {query}")
     geo = geocode_region(query)
     print(f"      → {geo}")
@@ -320,12 +333,14 @@ def main() -> None:
         return
 
     nights   = (date.fromisoformat(checkout) - date.fromisoformat(checkin)).days
-    out_path = Path(__file__).parent / f"airbnb_{query}_{checkin}_{checkout}.xlsx"
+    today_str = date.today().strftime("%Y%m%d")
+    out_dir  = Path(__file__).parent / "output" / f"{today_str}_{query}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{query}_기본_{checkin}~{checkout}.xlsx"
 
     print(f"[3/3] Excel 생성: {out_path.name}")
     build_excel(listings, query, checkin, checkout, out_path)
 
-    prices = [l["price_per_night"] for l in listings]
     print()
     print(f"{'번호':>3}  {'숙소명':<35}  {'유형':<8}  {'1박가':>10}  {f'{nights}박 총액':>12}  평점")
     print("-" * 85)
@@ -333,6 +348,13 @@ def main() -> None:
         total = l["price_per_night"] * nights
         name  = l["title"][:33]
         print(f"{i:>3}  {name:<35}  {l['room_type']:<8}  ₩{l['price_per_night']:>8,}  ₩{total:>10,}  {l['rating']}")
+
+
+def main() -> None:
+    query    = sys.argv[1] if len(sys.argv) > 1 else "충무로"
+    checkin  = sys.argv[2] if len(sys.argv) > 2 else "2026-09-08"
+    checkout = sys.argv[3] if len(sys.argv) > 3 else "2026-09-10"
+    run(query, checkin, checkout)
 
 
 if __name__ == "__main__":

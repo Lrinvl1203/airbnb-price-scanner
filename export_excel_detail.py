@@ -309,11 +309,7 @@ def build_excel_detail(
     print(f"✅ 저장: {out_path}")
 
 
-def main() -> None:
-    query    = sys.argv[1] if len(sys.argv) > 1 else "홍대"
-    checkin  = sys.argv[2] if len(sys.argv) > 2 else "2026-09-08"
-    checkout = sys.argv[3] if len(sys.argv) > 3 else "2026-09-09"
-
+def run(query: str, checkin: str, checkout: str) -> None:
     print(f"[1/4] 지오코딩: {query}")
     geo = geocode_region(query)
     print(f"      → {geo}")
@@ -340,17 +336,25 @@ def main() -> None:
         detail = fetch_detail(url, session)
         lst.update(detail)
 
-        # 성공 여부 표시
         ok = bool(detail.get("description") and not detail["description"].startswith("오류"))
         print("✅" if ok else f"⚠ {detail.get('description', '')[:30]}")
 
-        # Airbnb 요청 간격 (봇 차단 방지)
         if i < len(listings):
             time.sleep(2.0)
 
-    out_path = Path(__file__).parent / f"airbnb_detail_{query}_{checkin}_{checkout}.xlsx"
+    today_str = date.today().strftime("%Y%m%d")
+    out_dir  = Path(__file__).parent / "output" / f"{today_str}_{query}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{query}_상세_{checkin}~{checkout}.xlsx"
     print(f"[4/4] Excel 생성: {out_path.name}")
     build_excel_detail(listings, query, checkin, checkout, out_path)
+
+
+def main() -> None:
+    query    = sys.argv[1] if len(sys.argv) > 1 else "홍대"
+    checkin  = sys.argv[2] if len(sys.argv) > 2 else "2026-09-08"
+    checkout = sys.argv[3] if len(sys.argv) > 3 else "2026-09-09"
+    run(query, checkin, checkout)
 
 
 if __name__ == "__main__":

@@ -74,11 +74,10 @@ _COMMERCIAL_DESC_KW = [
 # 1. 날짜창 계산
 # ══════════════════════════════════════════════════════════════════
 
-def get_date_windows() -> list[tuple[str, str, str]]:
-    """3주 후 주간의 평일(월→화)과 주말(금→토) 반환."""
-    today = date.today()
-    base  = today + timedelta(weeks=3)
-    # 해당 주 월요일
+def get_date_windows(target: date | None = None) -> list[tuple[str, str, str]]:
+    """지정 날짜가 속한 주의 평일(월→화)과 주말(금→토) 반환.
+    target 미지정 시 오늘 기준 3주 후 주간 사용."""
+    base   = target if target else (date.today() + timedelta(weeks=3))
     monday = base - timedelta(days=base.weekday())
     friday = monday + timedelta(days=4)
     return [
@@ -147,9 +146,10 @@ def collect_data(
     geo: dict,
     beds: int | None,
     baths: float | None,
+    target_date: date | None = None,
 ) -> dict:
     """두 날짜창 수집 → 머지 → 필터 → 분류 결과 반환."""
-    windows = get_date_windows()
+    windows = get_date_windows(target_date)
     session = cf_requests.Session()
     session.headers.update({
         "User-Agent": (
@@ -2278,47 +2278,43 @@ def build_html_report(
 # 9. 메인
 # ══════════════════════════════════════════════════════════════════
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Airbnb 시장 분석 리포트 생성기 v3")
-    parser.add_argument("query",          help="검색 지역 (예: 충신동)")
-    parser.add_argument("--beds",  type=int,   default=None, help="침실 수 필터")
-    parser.add_argument("--baths", type=float, default=None, help="욕실 수 필터")
-    parser.add_argument("--mode",  choices=["both", "client", "internal"], default="both",
-                        help="출력 모드 (default: both)")
-    # v3: 수익 시뮬레이터 파라미터
-    parser.add_argument("--occ-low",  type=float, default=0.40,
-                        help="보수 점유율 가정 (default: 0.40)")
-    parser.add_argument("--occ-base", type=float, default=0.60,
-                        help="기준 점유율 가정 (default: 0.60)")
-    parser.add_argument("--occ-high", type=float, default=0.70,
-                        help="공격 점유율 가정 (default: 0.70)")
-    parser.add_argument("--cleaning-fee", type=int, default=80000,
-                        help="청소비/회 (default: 80000)")
-    parser.add_argument("--avg-nights",   type=float, default=2.0,
-                        help="평균 체류일 (default: 2.0)")
-    parser.add_argument("--monthly-cost", type=int, default=0,
-                        help="월 고정 운영비 청소비 제외 (default: 0)")
-    args = parser.parse_args()
-
-    query = args.query
-    beds  = args.beds
-    baths = args.baths
+def run(
+    query: str,
+    beds:          int   | None = None,
+    baths:         float | None = None,
+    output_mode:   str         = "both",
+    occ_low:       float       = 0.40,
+    occ_base:      float       = 0.60,
+    occ_high:      float       = 0.70,
+    cleaning_fee:  int         = 80_000,
+    avg_nights:    float       = 2.0,
+    monthly_cost:  int         = 0,
+    checkin:       str  | None = None,
+) -> None:
     today = date.today().isoformat()
+
+    target_date: date | None = None
+    if checkin:
+        try:
+            target_date = date.fromisoformat(checkin)
+        except ValueError:
+            print(f"⚠ --checkin 날짜 형식 오류 ({checkin}), 자동 날짜 사용")
 
     print(f"\n{'='*60}")
     print(f" Airbnb 시장 분석 리포트 v3 — {query}")
     print(f"{'='*60}")
+    if target_date: print(f" 기준 날짜: {target_date.isoformat()} 주간")
     if beds  is not None: print(f" 침실 필터: {beds}개")
     if baths is not None: print(f" 욕실 필터: {baths}개")
-    print(f" 점유율 가정: {args.occ_low*100:.0f}% / {args.occ_base*100:.0f}% / {args.occ_high*100:.0f}%")
-    print(f" 청소비: ₩{args.cleaning_fee:,} / 평균 체류: {args.avg_nights}박")
+    print(f" 점유율 가정: {occ_low*100:.0f}% / {occ_base*100:.0f}% / {occ_high*100:.0f}%")
+    print(f" 청소비: ₩{cleaning_fee:,} / 평균 체류: {avg_nights}박")
 
     print(f"\n[1/5] 지오코딩: {query}")
     geo = geocode_region(query)
     print(f"      → lat={geo.get('lat')}, lon={geo.get('lon')}")
 
     print("\n[2/5] 데이터 수집 (2개 날짜창 × B 모드)")
-    collected = collect_data(query, geo, beds, baths)
+    collected = collect_data(query, geo, beds, baths, target_date)
     listings  = collected["listings"]
 
     if not listings:
@@ -2344,14 +2340,14 @@ def main() -> None:
     comps        = compute_comp_similarity(listings, beds, baths, center_lat, center_lon, adr_clean)
     market_score = compute_market_score(listings, stats, premium, demand)
     scenarios    = build_revenue_scenarios(
-        adr_clean          = adr_clean,
-        premium            = premium,
-        occ_low            = args.occ_low,
-        occ_base           = args.occ_base,
-        occ_high           = args.occ_high,
-        cleaning_fee_per_stay = args.cleaning_fee,
-        avg_stay_nights    = args.avg_nights,
-        monthly_ops_cost   = args.monthly_cost,
+        adr_clean             = adr_clean,
+        premium               = premium,
+        occ_low               = occ_low,
+        occ_base              = occ_base,
+        occ_high              = occ_high,
+        cleaning_fee_per_stay = cleaning_fee,
+        avg_stay_nights       = avg_nights,
+        monthly_ops_cost      = monthly_cost,
     )
 
     print(f"      체감 ADR (총가): ₩{eff_adr.get('mean', 0):,.0f}")
@@ -2363,24 +2359,23 @@ def main() -> None:
     base.mkdir(parents=True, exist_ok=True)
     print("\n[5/5] 리포트 생성 (손님용 + 내부용 + HTML)")
 
-    if args.mode in ("both", "client"):
+    if output_mode in ("both", "client"):
         out_client = base / f"market_report_{query}_{today}_손님용.xlsx"
         build_client_report(
             listings, query, beds, baths, windows, stats, premium, out_client,
             scenarios=scenarios, market_score=market_score,
-            cleaning_fee=args.cleaning_fee, avg_stay=args.avg_nights,
-            monthly_ops=args.monthly_cost,
+            cleaning_fee=cleaning_fee, avg_stay=avg_nights,
+            monthly_ops=monthly_cost,
         )
 
-    if args.mode in ("both", "internal"):
+    if output_mode in ("both", "internal"):
         out_internal = base / f"market_report_{query}_{today}_내부용.xlsx"
         build_internal_report(
             listings, query, beds, baths, windows, stats, premium, collected, out_internal,
             demand=demand,
         )
 
-    # HTML은 mode=both|client 시 항상 생성
-    if args.mode in ("both", "client"):
+    if output_mode in ("both", "client"):
         out_html = base / f"market_report_{query}_{today}.html"
         build_html_report(listings, query, beds, baths, windows, stats, premium, out_html,
                           market_score=market_score, scenarios=scenarios,
@@ -2388,13 +2383,44 @@ def main() -> None:
 
     print(f"\n{'='*60}")
     print(f" 완료!")
-    if args.mode in ("both", "client"):
+    if output_mode in ("both", "client"):
         print(f"  → 손님용: market_report_{query}_{today}_손님용.xlsx")
-    if args.mode in ("both", "internal"):
+    if output_mode in ("both", "internal"):
         print(f"  → 내부용: market_report_{query}_{today}_내부용.xlsx")
-    if args.mode in ("both", "client"):
+    if output_mode in ("both", "client"):
         print(f"  → HTML  : market_report_{query}_{today}.html")
     print(f"{'='*60}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Airbnb 시장 분석 리포트 생성기 v3")
+    parser.add_argument("query",          help="검색 지역 (예: 충신동)")
+    parser.add_argument("--beds",  type=int,   default=None)
+    parser.add_argument("--baths", type=float, default=None)
+    parser.add_argument("--mode",  choices=["both", "client", "internal"], default="both")
+    parser.add_argument("--occ-low",      type=float, default=0.40)
+    parser.add_argument("--occ-base",     type=float, default=0.60)
+    parser.add_argument("--occ-high",     type=float, default=0.70)
+    parser.add_argument("--cleaning-fee", type=int,   default=80_000)
+    parser.add_argument("--avg-nights",   type=float, default=2.0)
+    parser.add_argument("--monthly-cost", type=int,   default=0)
+    parser.add_argument("--checkin",      type=str,   default=None,
+                        help="기준 체크인 날짜 YYYY-MM-DD (해당 주의 평일/주말 창 사용)")
+    args = parser.parse_args()
+
+    run(
+        query        = args.query,
+        beds         = args.beds,
+        baths        = args.baths,
+        output_mode  = args.mode,
+        occ_low      = args.occ_low,
+        occ_base     = args.occ_base,
+        occ_high     = args.occ_high,
+        cleaning_fee = args.cleaning_fee,
+        avg_nights   = args.avg_nights,
+        monthly_cost = args.monthly_cost,
+        checkin      = args.checkin,
+    )
 
 
 if __name__ == "__main__":

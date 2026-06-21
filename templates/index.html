@@ -257,6 +257,21 @@
 
 <script>
 // ────────────────────────────────────────────
+//  이모지 제거
+// ────────────────────────────────────────────
+const _emojiRe = /[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}️‍]+/gu;
+function stripEmoji(s) {
+  return s ? String(s).replace(_emojiRe, '').trim() : s;
+}
+function cleanListing(l) {
+  l.title         = stripEmoji(l.title);
+  l.room_type     = stripEmoji(l.room_type);
+  l.property_type = stripEmoji(l.property_type);
+  l.region_query  = stripEmoji(l.region_query);
+  return l;
+}
+
+// ────────────────────────────────────────────
 //  전역 상태
 // ────────────────────────────────────────────
 let allListings  = [];
@@ -314,7 +329,7 @@ async function doSearch() {
     if (data.notice) showNotice(data.notice);
 
     searchMeta  = data.meta || {};
-    allListings = data.listings;
+    allListings = data.listings.map(cleanListing);
 
     const d1 = new Date(checkin), d2 = new Date(checkout);
     currentSearch = {

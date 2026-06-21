@@ -61,19 +61,28 @@ PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
 cd "<<프로젝트_절대경로>>"
 PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
   market_report.py <지역> [--beds N] [--baths N] [--mode both|client|internal] \
+  [--checkin YYYY-MM-DD] \
   [--occ-low 0.40] [--occ-base 0.60] [--occ-high 0.70] \
   [--cleaning-fee 80000] [--avg-nights 2.0] [--monthly-cost 0]
 ```
 
+**`--checkin` 옵션**: 사용자가 날짜를 지정하면 반드시 이 옵션으로 전달해야 한다.
+- 해당 날짜가 속한 주의 평일(월→화)과 주말(금→토) 창으로 수집
+- 미지정 시 오늘 기준 3주 후 주간 자동 사용
+
 **기본 실행 예시:**
 ```bash
-# 충신동 3침실 2욕실 시장 분석
+# 충신동 3침실 2욕실 시장 분석 (자동 날짜)
 PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
   market_report.py 충신동 --beds 3 --baths 2
 
-# 홍대 전체 시장
+# 홍대 전체 시장 (자동 날짜)
 PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
   market_report.py 홍대
+
+# 날짜 지정 예시 — 9월 1일 주간 수집
+PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
+  market_report.py 충무로 --checkin 2026-09-01
 
 # 손님용만 + 수익 시뮬레이터 커스텀
 PYTHONIOENCODING=utf-8 <<Python_절대경로>> \
