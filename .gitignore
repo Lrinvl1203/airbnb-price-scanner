@@ -46,9 +46,10 @@ first_item*.json
 output/
 _scratch/
 
-# Backup folders
+# Backup / snapshot folders (로컬 전용)
 _v1_backup/
 _v2_market_report_backup/
+_snapshot_pre_gui/
 
 # Playwright MCP
 .playwright-mcp/
