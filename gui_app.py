@@ -40,7 +40,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("Airbnb 시장 분석 도구")
         self.resizable(True, True)
-        self.minsize(760, 720)
+        self.minsize(820, 720)
 
         self._log_q: queue.Queue[str | tuple] = queue.Queue()
         self._running = False
@@ -95,20 +95,47 @@ class App(tk.Tk):
             ttk.Radiobutton(frm_radio, text=label, variable=self.var_mode,
                             value=val, command=self._on_mode_change).pack(anchor="w", pady=2)
 
+        # 모드 설명 인포 박스
+        _IB = "#f0f4fa"
+        self._frm_info = tk.Frame(frm_radio, bg=_IB, relief="groove", bd=1)
+        self._frm_info.pack(fill="x", padx=(22, 4), pady=(6, 4))
+
+        _rows = ["수집 방식", "입     력", "출     력", "소요 시간"]
+        self._info_lbls: dict[str, tk.Label] = {}
+        for i, key in enumerate(_rows):
+            tk.Label(self._frm_info, text=key, bg=_IB,
+                     font=("", 9, "bold"), fg="#444444",
+                     anchor="e", width=9).grid(
+                row=i, column=0,
+                padx=(10, 4), pady=(6 if i == 0 else 3, 6 if i == len(_rows)-1 else 3),
+                sticky="e")
+            tk.Label(self._frm_info, text="│", bg=_IB, fg="#bbbbbb",
+                     font=("", 9)).grid(row=i, column=1, sticky="ns")
+            lbl = tk.Label(self._frm_info, text="", bg=_IB,
+                           font=("", 9), fg="#333333",
+                           anchor="w", justify="left", wraplength=450)
+            lbl.grid(row=i, column=2,
+                     padx=(8, 10),
+                     pady=(6 if i == 0 else 3, 6 if i == len(_rows)-1 else 3),
+                     sticky="w")
+            self._info_lbls[key] = lbl
+
         # ── M 모드 옵션 (초기에는 숨김) ──
         self.frm_m = ttk.LabelFrame(self, text="M 모드 옵션 (시장 분석)")
         # 내부 위젯만 구성, pack은 _on_mode_change에서
 
-        pad2 = {"padx": 10, "pady": 3}
+        _DG = "#777777"   # description gray
 
-        def _spin_row(row, label, var, from_, to, inc, fmt="%.0f", note=""):
-            ttk.Label(self.frm_m, text=label).grid(row=row, column=0, sticky="w", **pad2)
+        def _spin_row(row, label, var, from_, to, inc, fmt="%.0f", desc=""):
+            ttk.Label(self.frm_m, text=label, width=16, anchor="w").grid(
+                row=row, column=0, sticky="w", padx=(10, 4), pady=4)
             ttk.Spinbox(self.frm_m, from_=from_, to=to, increment=inc,
-                        textvariable=var, width=10, format=fmt).grid(
-                row=row, column=1, sticky="w", **pad2)
-            if note:
-                ttk.Label(self.frm_m, text=note, foreground="#666").grid(
-                    row=row, column=2, sticky="w", padx=4)
+                        textvariable=var, width=12, format=fmt).grid(
+                row=row, column=1, sticky="w", padx=4, pady=4)
+            if desc:
+                ttk.Label(self.frm_m, text=desc, foreground=_DG,
+                          wraplength=310, justify="left").grid(
+                    row=row, column=2, sticky="w", padx=(8, 10), pady=4)
 
         self.var_beds       = tk.StringVar(value="0")
         self.var_baths      = tk.StringVar(value="0")
@@ -119,28 +146,40 @@ class App(tk.Tk):
         self.var_occ_high   = tk.StringVar(value="0.70")
         self.var_avg_nights = tk.StringVar(value="2.0")
 
-        _spin_row(0, "침실 수",    self.var_beds,    0, 20,      1, note="(0 = 전체)")
-        _spin_row(1, "욕실 수",    self.var_baths,   0, 10,      1, note="(0 = 전체)")
-        _spin_row(2, "청소비 (원/회)", self.var_cleaning, 0, 500000, 10000)
-        _spin_row(3, "월 고정비 (원)", self.var_monthly,  0, 5000000, 50000)
-        _spin_row(4, "평균 숙박일",    self.var_avg_nights, 1, 30, 0.5, "%.1f")
+        _spin_row(0, "침실 수",         self.var_beds,       0, 20,      1,
+                  desc="0 = 침실 수 무관 전체 수집\n특정 규모만 비교하려면 숫자 지정")
+        _spin_row(1, "욕실 수",         self.var_baths,      0, 10,      1,
+                  desc="0 = 욕실 수 무관 전체 수집")
+        _spin_row(2, "청소비  (원/회)", self.var_cleaning,   0, 500000, 10000,
+                  desc="손님에게 부과하는 1회 청소비\n→ 수익 시뮬레이터 계산에 반영됨")
+        _spin_row(3, "월 고정비  (원)", self.var_monthly,    0, 5000000, 50000,
+                  desc="임대료·관리비 등 매달 고정 지출\n0이면 비용 없음으로 처리")
+        _spin_row(4, "평균 숙박일",     self.var_avg_nights, 1, 30, 0.5, "%.1f",
+                  desc="예약 1건당 평균 숙박일\n청소비 발생 빈도 계산에 사용")
 
-        ttk.Label(self.frm_m, text="점유율  하/기/상").grid(
-            row=5, column=0, sticky="w", **pad2)
+        ttk.Label(self.frm_m, text="점유율  하/기/상", width=16, anchor="w").grid(
+            row=5, column=0, sticky="w", padx=(10, 4), pady=4)
         frm_occ = ttk.Frame(self.frm_m)
-        frm_occ.grid(row=5, column=1, columnspan=2, sticky="w", **pad2)
+        frm_occ.grid(row=5, column=1, sticky="w", padx=4, pady=4)
         for var in (self.var_occ_low, self.var_occ_base, self.var_occ_high):
             ttk.Spinbox(frm_occ, from_=0.0, to=1.0, increment=0.05,
-                        textvariable=var, width=6, format="%.2f").pack(side="left", padx=3)
-        ttk.Label(frm_occ, text="(보수 / 기준 / 공격)").pack(side="left", padx=4)
+                        textvariable=var, width=7, format="%.2f").pack(side="left", padx=(0, 4))
+        ttk.Label(self.frm_m, text="연간 점유율 시나리오 3가지 (보수적 / 기준 / 공격적)\n수익 시뮬레이터에서 3개 열로 나란히 비교됨",
+                  foreground=_DG, wraplength=310, justify="left").grid(
+            row=5, column=2, sticky="w", padx=(8, 10), pady=4)
 
-        ttk.Label(self.frm_m, text="출력 형식").grid(row=6, column=0, sticky="w", **pad2)
+        ttk.Label(self.frm_m, text="출력 형식", width=16, anchor="w").grid(
+            row=6, column=0, sticky="w", padx=(10, 4), pady=4)
         self.var_output_mode = tk.StringVar(value="both")
         frm_om = ttk.Frame(self.frm_m)
-        frm_om.grid(row=6, column=1, columnspan=2, sticky="w", **pad2)
+        frm_om.grid(row=6, column=1, sticky="w", padx=4, pady=4)
         for txt, val in [("손님+내부+HTML", "both"), ("손님용만", "client"), ("내부용만", "internal")]:
             ttk.Radiobutton(frm_om, text=txt, variable=self.var_output_mode,
-                            value=val).pack(side="left", padx=6)
+                            value=val).pack(side="left", padx=(0, 8))
+        ttk.Label(self.frm_m,
+                  text="both: 손님용·내부용 Excel + HTML 모두 생성\nclient: 손님 전달용 Excel만  /  internal: 내부 분석용 Excel만",
+                  foreground=_DG, wraplength=310, justify="left").grid(
+            row=6, column=2, sticky="w", padx=(8, 10), pady=4)
 
         # ── 수집 매물 수 ──
         self.frm_adv = ttk.LabelFrame(self, text="수집 매물 수")
@@ -195,12 +234,38 @@ class App(tk.Tk):
         sb.pack(side="right", fill="y")
         self.log_text.pack(fill="both", expand=True, padx=2, pady=2)
 
-        # 초기 상태: M 프레임 숨김 (pack한 적 없으므로 그냥 두면 됨)
+        # 초기 상태: 기본 모드 설명 표시
+        self._on_mode_change()
+
+    # ── 모드 설명 데이터 ────────────────────────────────────────────────
+    _MODE_INFO: dict[str, dict[str, str]] = {
+        "A": {
+            "수집 방식": "가격·위치·평점·숙소유형 등  Airbnb 목록 페이지 데이터만 빠르게 수집",
+            "입     력": "지역명  /  체크인·체크아웃 날짜  /  최대 매물 수",
+            "출     력": "output/raw/airbnb_{지역}_{날짜}.xlsx   (14컬럼)",
+            "소요 시간": "약 30~60초",
+        },
+        "B": {
+            "수집 방식": "A 모드 수집 후  각 숙소 상세 페이지를 직접 방문 →  소개글·편의시설·호스트 정보 추가",
+            "입     력": "지역명  /  체크인·체크아웃 날짜  /  최대 매물 수",
+            "출     력": "output/raw/airbnb_detail_{지역}_{날짜}.xlsx   (22컬럼)",
+            "소요 시간": "숙소당 약 2초 × 최대 80개  ≈  3~5분",
+        },
+        "M": {
+            "수집 방식": "체크인이 속한 주의  평일(월→화) · 주말(금→토)  2개 날짜창 자동 수집 →  통계 분석",
+            "입     력": "지역명  /  체크인(해당 주 기준 자동 분리)  /  아래 M 모드 옵션 전체",
+            "출     력": "output/market/   손님용.xlsx  +  내부용.xlsx  +  .html",
+            "소요 시간": "약 10~20분",
+        },
+    }
 
     # ── 모드 토글 ──────────────────────────────────────────────────────
     def _on_mode_change(self) -> None:
-        if self.var_mode.get() == "M":
-            # frm_adv 바로 앞에 삽입
+        mode = self.var_mode.get()
+        info = self._MODE_INFO.get(mode, {})
+        for key, lbl in self._info_lbls.items():
+            lbl.configure(text=info.get(key, ""))
+        if mode == "M":
             self.frm_m.pack(fill="x", padx=12, pady=4, before=self.frm_adv)
         else:
             self.frm_m.pack_forget()
@@ -342,6 +407,7 @@ class App(tk.Tk):
                 import market_report as _m
                 importlib.reload(_m)
                 kwargs: dict = {
+                    "checkin":      inp["checkin"],
                     "cleaning_fee": inp["cleaning"],
                     "monthly_cost": inp["monthly"],
                     "occ_low":      inp["occ_low"],
@@ -385,8 +451,16 @@ class App(tk.Tk):
 
         except Exception as exc:
             import traceback
-            self._log(f"\n❌ 오류: {exc}", "err")
-            self._log(traceback.format_exc(), "err")
+            if isinstance(exc, PermissionError) or "Permission denied" in str(exc):
+                fname = str(exc).split("'")[-2] if "'" in str(exc) else "파일"
+                import os as _os
+                fname = _os.path.basename(fname)
+                self._log(f"\n❌ 파일 저장 실패: {fname}", "err")
+                self._log("   → Excel에서 해당 파일이 열려 있습니다.", "err")
+                self._log("   → 파일을 닫은 후 다시 실행하세요.", "err")
+            else:
+                self._log(f"\n❌ 오류: {exc}", "err")
+                self._log(traceback.format_exc(), "err")
 
         finally:
             sys.stdout, sys.stderr = old_out, old_err

@@ -1254,6 +1254,154 @@ def _build_demand_sheet(wb, f, demand, listings):
         r += 1
 
 
+def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
+    """📖 용어·로직 안내 시트 — 모든 항목의 계산 방법과 용어 설명."""
+    ws = wb.add_worksheet("📖 용어·로직 안내")
+    ws.set_column("A:A", 2)
+    ws.set_column("B:B", 26)
+    ws.set_column("C:E", 28)
+
+    note_fmt = wb.add_format({
+        "font_size": 9, "italic": True, "font_color": C_GRAY,
+        "text_wrap": True, "valign": "top",
+    })
+
+    def _section(row, title):
+        ws.merge_range(row, 1, row, 4, title, f["section"])
+        ws.set_row(row, 22)
+        return row + 1
+
+    def _item(row, label, desc, highlight=False):
+        lf = f["sub_key_hl"] if highlight else f["sub_key"]
+        vf = f["sub_val_hl"] if highlight else wb.add_format(
+            {"font_size": 10, "align": "left", "valign": "vcenter", "text_wrap": True})
+        ws.write(row, 1, label, lf)
+        ws.merge_range(row, 2, row, 4, desc, vf)
+        ws.set_row(row, 32)
+        return row + 1
+
+    def _note(row, text):
+        ws.merge_range(row, 1, row, 4, text, note_fmt)
+        ws.set_row(row, 18)
+        return row + 1
+
+    # 배너
+    ws.merge_range(0, 0, 0, 4, "📖 용어 및 로직 설명", f["banner"])
+    ws.set_row(0, 40)
+    ws.merge_range(1, 0, 1, 4,
+                   "이 시트는 리포트 각 항목의 계산 방법과 용어를 설명합니다. 의사결정 시 참고하세요.",
+                   f["subtitle"])
+    ws.set_row(1, 24)
+
+    r = 3
+
+    # ── 섹션 1: 데이터 수집 ──────────────────────────────────────────
+    r = _section(r, "📡  데이터 수집 방식")
+    r = _item(r, "날짜창 자동 설정",
+              "입력한 체크인 날짜가 속한 주의 평일(월요일→화요일)과 주말(금요일→토요일) "
+              "1박 창 2개를 자동으로 수집합니다.")
+    r = _item(r, "중복 URL 머지",
+              "두 날짜창에서 동일 숙소(URL 기준)를 하나로 합쳐 평일가·주말가를 각각 보존합니다.")
+    r = _item(r, "상세 크롤링",
+              "각 숙소 상세 페이지를 방문해 소개글·편의시설·호스트 정보를 추가로 수집합니다.")
+    r += 1
+
+    # ── 섹션 2: 가격 용어 ──────────────────────────────────────────
+    r = _section(r, "💰  가격 용어")
+    r = _item(r, "1박가 (ADR)",
+              "Airbnb 검색 결과에 표시되는 1박 기준 숙박료. 청소비·서비스료 미포함.")
+    r = _item(r, "총가 (Total Price)",
+              "1박가 × 숙박 박수. Airbnb 청소비·서비스료는 별도입니다.")
+    r = _item(r, "블렌디드 ADR",
+              "평일 ADR × 5/7 + 주말 ADR × 2/7 — 주 7일 기준 가중 평균 일당 요금.", True)
+    r = _item(r, "주말 프리미엄",
+              "(공통 숙소의 주말 평균가 − 평일 평균가) ÷ 평일 평균가. "
+              "주말 수요 탄력성 지표입니다.")
+    r += 1
+
+    # ── 섹션 3: 통계 지표 ──────────────────────────────────────────
+    r = _section(r, "📊  통계 지표")
+    r = _item(r, "이상치 제거 (IQR)",
+              "Q3 + 1.5×IQR 초과 또는 Q1 − 1.5×IQR 미만인 가격을 이상치로 분류합니다. "
+              "클린 평균 산출 시 이상치를 제외합니다.")
+    r = _item(r, "클린 평균",
+              "이상치를 제외한 후 계산한 평균가. 시장 대표 가격으로 신뢰도가 높습니다.", True)
+    r = _item(r, "중앙값 (P50)",
+              "전체 숙소를 가격 순으로 정렬했을 때 정중앙에 위치하는 값. 극단값에 강건합니다.")
+    r = _item(r, "P10 ~ P90 (퍼센타일)",
+              "전체 숙소를 가격 순으로 정렬했을 때 하위 N%에 해당하는 가격. "
+              "예: P25 = 하위 25%에 해당하는 가격.")
+    r = _item(r, "표준편차 (Stdev)",
+              "가격 분포의 퍼짐 정도. 클수록 시장 가격이 다양하게 형성되어 있습니다.")
+    r += 1
+
+    # ── 섹션 4: 추천 객단가 ────────────────────────────────────────
+    r = _section(r, "💡  추천 객단가 포지셔닝")
+    r = _item(r, "스타터 = P40",
+              "초기 진입 단계. 리뷰 0개 상태에서 예약을 빠르게 늘리기 위한 진입가. "
+              "시장 하위 40% 수준.")
+    r = _item(r, "표준 = P55",
+              "리뷰 10개 이상 확보 후 적정 포지션. 시장 중간보다 약간 위 수준.", True)
+    r = _item(r, "프리미엄 = P70",
+              "슈퍼호스트·차별화 요소 확보 후 목표 가격. 시장 상위 30% 수준.")
+    r = _note(r, "※ 초기 리뷰 5개 이상 확보 후 단계적으로 가격을 올리는 전략을 권장합니다.")
+    r += 1
+
+    # ── 섹션 5: 수익 시뮬레이터 ───────────────────────────────────
+    r = _section(r, "💰  수익 시뮬레이터 가정")
+    r = _item(r, "호스트 수수료 3%",
+              "Airbnb 기본 호스트 수수료. 총 매출의 3%를 공제합니다.")
+    r = _item(r, "청소비 계산",
+              "청소 횟수 = 예약일수 ÷ 평균 체류일수. 총 청소비 = 횟수 × 1회 청소비.")
+    r = _item(r, "영업이익 계산",
+              "영업이익 = 순매출(총매출 − 수수료) − 청소비 − 월 고정비. "
+              "임대료·대출 상환·세금은 포함되지 않습니다.", True)
+    r = _item(r, "블렌디드 ADR 계산",
+              "평일 ADR × 5/7 + 주말 ADR × 2/7 (주 7일 중 평일 5일, 주말 2일 가정).")
+    r = _note(r, "※ 임대료, 대출 상환, 감가상각, 세금은 포함되지 않습니다. 의사결정 보조 지표로만 활용하세요.")
+    r += 1
+
+    if is_internal:
+        # ── 섹션 6: 시장 매력도 점수 ───────────────────────────────
+        r = _section(r, "🏆  시장 매력도 점수 (4요소 × 25점 = 100점)")
+        r = _item(r, "수요 안정성 (25점)",
+                  "시장 평균 리뷰 수 기반. ≥40개=25점 / ≥20개=18점 / ≥10개=12점 / 미만=6점.")
+        r = _item(r, "주말 수요 탄력성 (25점)",
+                  "주말 프리미엄 비율 기반. ≥30%=25점 / ≥15%=18점 / ≥5%=10점 / 미만=4점.", True)
+        r = _item(r, "가격 성장 여력 (25점)",
+                  "(P70 − P40) ÷ P40 스프레드 기반. ≥70%=25점 / ≥40%=18점 / ≥20%=12점 / 미만=6점.")
+        r = _item(r, "진입 품질 허들 (25점)",
+                  "경쟁자 평균 평점의 역점수. 낮은 경쟁 품질=차별화 용이. "
+                  "<4.50=25점 / <4.70=18점 / <4.85=12점 / 이상=6점.")
+        r = _note(r, "※ 수집 숙소 15개 미만 시 신뢰도 경고가 표시됩니다.")
+        r += 1
+
+        # ── 섹션 7: 개인·상업용 분류 ──────────────────────────────
+        r = _section(r, "🏠  개인·상업용 분류 기준")
+        r = _item(r, "분류 로직",
+                  "건물유형·호스트명·소개글 키워드에 스코어를 부여합니다. "
+                  "합산 점수 2점 이상이면 '상업용'으로 분류합니다.", True)
+        r = _item(r, "건물 유형 (+3점)",
+                  "호텔, 게스트하우스, 호스텔, B&B, 부티크호텔 등 해당 시 3점 추가.")
+        r = _item(r, "호스트명 (+2점)",
+                  "이름에 '호텔', '스테이', '레지던스', '리조트', '펜션', '모텔' 등 포함 시 2점 추가.")
+        r = _item(r, "소개글 (+2점)",
+                  "'프론트 데스크', '리셉션', '체크인 카운터' 등 2개 이상 포함 시 2점 추가.")
+        r += 1
+
+        # ── 섹션 8: 수요 추정 ──────────────────────────────────────
+        r = _section(r, "📈  수요 추정 방법 (저신뢰도)")
+        r = _item(r, "계산식",
+                  "추정 점유율 = (월 평균리뷰 ÷ 가정 등록기간) ÷ 리뷰작성률 ÷ 30일", True)
+        r = _item(r, "등록기간 가정 (18개월)",
+                  "숙소의 실제 등록일을 알 수 없어 평균 18개월로 가정합니다.")
+        r = _item(r, "리뷰 작성률 시나리오",
+                  "예약 대비 리뷰 작성 비율을 50%(낙관) / 70%(기준) / 90%(보수) 세 시나리오로 계산합니다.")
+        r = _note(r,
+                  "※ 실제 체크아웃 데이터 없이는 정확한 점유율 산출이 불가합니다. "
+                  "실제와 ±20%p 이상 오차가 발생할 수 있습니다. 참고 지표로만 활용하세요.")
+
+
 def build_client_report(
     listings: list[dict],
     query: str,
@@ -1280,6 +1428,7 @@ def build_client_report(
         adr_clean = stats.get("mean_clean") or stats.get("mean") or 0
         _build_revenue_sheet(wb, f, scenarios, adr_clean, premium, market_score,
                              cleaning_fee, avg_stay, monthly_ops)
+    _build_guide_sheet(wb, f, is_internal=False)
 
     wb.close()
     _fix_colors(out_path)
@@ -1690,6 +1839,7 @@ def build_internal_report(
     _build_meta_sheet(wb, f, query, beds, baths, collected["geo"], collected)
     if demand:
         _build_demand_sheet(wb, f, demand, listings)
+    _build_guide_sheet(wb, f, is_internal=True)
 
     wb.close()
     _fix_colors(out_path)
