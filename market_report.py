@@ -75,14 +75,23 @@ _COMMERCIAL_DESC_KW = [
 # ══════════════════════════════════════════════════════════════════
 
 def get_date_windows(target: date | None = None) -> list[tuple[str, str, str]]:
-    """지정 날짜가 속한 주의 평일(월→화)과 주말(금→토) 반환.
-    target 미지정 시 오늘 기준 3주 후 주간 사용."""
+    """지정 날짜 기반 평일·주말 각 1박 창 반환.
+
+    지정 날짜가 금~일(주말)이면 → 해당 날짜를 주말 창 체크인으로 사용.
+    지정 날짜가 월~목(평일)이면 → 해당 날짜를 평일 창 체크인으로 사용.
+    반대쪽 창은 같은 주의 월요일 / 금요일로 채움.
+    target 미지정 시 오늘 기준 3주 후 기준."""
     base   = target if target else (date.today() + timedelta(weeks=3))
-    monday = base - timedelta(days=base.weekday())
-    friday = monday + timedelta(days=4)
+    monday = base - timedelta(days=base.weekday())   # 해당 주 월요일
+    friday = monday + timedelta(days=4)               # 해당 주 금요일
+
+    wd = base.weekday()   # 0=월 … 4=금 5=토 6=일
+    weekday_in = base   if wd <= 3 else monday   # 월~목: 지정일 그대로 / 금~일: 해당 주 월
+    weekend_in = base   if wd >= 4 else friday   # 금~일: 지정일 그대로 / 월~목: 해당 주 금
+
     return [
-        (monday.isoformat(), (monday + timedelta(days=1)).isoformat(), "평일"),
-        (friday.isoformat(), (friday + timedelta(days=1)).isoformat(), "주말"),
+        (weekday_in.isoformat(), (weekday_in + timedelta(days=1)).isoformat(), "평일"),
+        (weekend_in.isoformat(), (weekend_in + timedelta(days=1)).isoformat(), "주말"),
     ]
 
 
