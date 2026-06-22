@@ -157,14 +157,14 @@ class App(tk.Tk):
         _spin_row(4, "평균 숙박일",     self.var_avg_nights, 1, 30, 0.5, "%.1f",
                   desc="예약 1건당 평균 숙박일\n청소비 발생 빈도 계산에 사용")
 
-        ttk.Label(self.frm_m, text="점유율  하/기/상", width=16, anchor="w").grid(
+        ttk.Label(self.frm_m, text="예약률  하/기/상", width=16, anchor="w").grid(
             row=5, column=0, sticky="w", padx=(10, 4), pady=4)
         frm_occ = ttk.Frame(self.frm_m)
         frm_occ.grid(row=5, column=1, sticky="w", padx=4, pady=4)
         for var in (self.var_occ_low, self.var_occ_base, self.var_occ_high):
             ttk.Spinbox(frm_occ, from_=0.0, to=1.0, increment=0.05,
                         textvariable=var, width=7, format="%.2f").pack(side="left", padx=(0, 4))
-        ttk.Label(self.frm_m, text="연간 점유율 시나리오 3가지 (보수적 / 기준 / 공격적)\n수익 시뮬레이터에서 3개 열로 나란히 비교됨",
+        ttk.Label(self.frm_m, text="연간 예약률 시나리오 3가지 (보수적 / 기준 / 공격적)\n수익 시뮬레이터에서 3개 열로 나란히 비교됨",
                   foreground=_DG, wraplength=310, justify="left").grid(
             row=5, column=2, sticky="w", padx=(8, 10), pady=4)
 

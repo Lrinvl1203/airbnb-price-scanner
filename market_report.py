@@ -118,6 +118,53 @@ def classify_host_type(listing: dict) -> str:
 # 3. 데이터 수집 및 머지
 # ══════════════════════════════════════════════════════════════════
 
+def fetch_calendar_occ(
+    listing_url: str,
+    session: cf_requests.Session,
+    months: int = 3,
+) -> float | None:
+    """Airbnb 캘린더 API로 향후 N개월 예약률(0~1) 수집. 실패 시 None."""
+    m = re.search(r"/rooms/(\d+)", listing_url)
+    if not m:
+        return None
+    listing_id = m.group(1)
+    today = date.today()
+    try:
+        r = session.get(
+            "https://www.airbnb.co.kr/api/v2/calendar_months",
+            params={
+                "key":        "d306zoyjsyarp7ifhu67rjxn52tv0t20",
+                "listing_id": listing_id,
+                "month":      today.month,
+                "year":       today.year,
+                "count":      months,
+                "_format":    "with_conditions",
+                "locale":     "ko",
+                "currency":   "KRW",
+            },
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        total = 0
+        booked = 0
+        for month_data in data.get("calendar_months", []):
+            for day in month_data.get("days", []):
+                try:
+                    d = date.fromisoformat(day["date"])
+                except Exception:
+                    continue
+                if d < today:
+                    continue
+                total += 1
+                if not day.get("available", True):
+                    booked += 1
+        return booked / total if total > 0 else None
+    except Exception:
+        return None
+
+
 def _fetch_window(
     query: str,
     checkin: str,
@@ -128,13 +175,15 @@ def _fetch_window(
 ) -> list[dict]:
     print(f"\n  [{label}] 크롤링: {checkin} ~ {checkout}")
     listings = crawl_airbnb(query, checkin, checkout, geo=geo, max_results=80)
-    print(f"  [{label}] {len(listings)}개 수집 → 상세 크롤링...")
+    print(f"  [{label}] {len(listings)}개 수집 → 상세 크롤링 + 예약률 수집...")
     for i, lst in enumerate(listings, 1):
         detail = fetch_detail(lst["url"], session)
         lst.update(detail)
+        lst["calendar_occ"] = fetch_calendar_occ(lst["url"], session)
         ok = bool(detail.get("description") and
                   not detail["description"].startswith("오류"))
-        print(f"    [{i:>2}/{len(listings)}] {'✅' if ok else '⚠'}", end="\r")
+        occ_str = f"{lst['calendar_occ']*100:.0f}%" if lst.get("calendar_occ") is not None else "?"
+        print(f"    [{i:>2}/{len(listings)}] {'✅' if ok else '⚠'} 예약률:{occ_str}", end="\r")
         if i < len(listings):
             time.sleep(2.0)
     print()
@@ -190,6 +239,10 @@ def collect_data(
     for lst in merged:
         lst["host_type"] = classify_host_type(lst)
 
+    # 분류 후 예약률 집계
+    occ_vals = [l["calendar_occ"] for l in merged if l.get("calendar_occ") is not None]
+    avg_calendar_occ = statistics.mean(occ_vals) if occ_vals else None
+
     return {
         "listings": merged,
         "windows":  windows,
@@ -197,6 +250,8 @@ def collect_data(
         "we_count": len(we_raw),
         "common_count": len(set(wd_by_url) & set(we_by_url)),
         "geo": geo,
+        "avg_calendar_occ":    avg_calendar_occ,
+        "calendar_occ_count":  len(occ_vals),
     }
 
 
@@ -368,7 +423,7 @@ def compute_comp_similarity(
 
 
 def compute_demand_signal(listings: list[dict]) -> dict:
-    """리뷰 수 기반 수요 시그널 및 점유율 추정 (저신뢰도).
+    """리뷰 수 기반 수요 시그널 및 예약률 추정 (저신뢰도).
 
     가정: 평균 등록 기간 18개월, 리뷰 작성률 50% / 70% / 90%
     """
@@ -469,7 +524,7 @@ def build_revenue_scenarios(
     avg_stay_nights:      float,
     monthly_ops_cost:     int,
 ) -> list[dict]:
-    """3개 점유율 시나리오 × 손익 구조 계산 (가정 기반 시뮬레이터).
+    """3개 예약률 시나리오 × 손익 구조 계산 (가정 기반 시뮬레이터).
 
     블렌디드 ADR = 평일 ADR × 5/7 + 주말 ADR × 2/7
     호스트 수수료: 3% (Airbnb 기본)
@@ -646,7 +701,7 @@ def _write_kpi_box(ws, row, col, label, value, f_label, f_value, span=2):
     ws.merge_range(row + 1, col, row + 1, col + span - 1, value, f_value)
 
 
-def _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, premium):
+def _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, premium, avg_calendar_occ=None):
     ws = wb.add_worksheet("📊 시장 개요")
 
     # 열 너비 (A=1.5, B-C=15, D=1.5, E-F=15, G=1.5, H-I=15, J=1.5)
@@ -701,6 +756,7 @@ def _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, prem
         ("주말 프리미엄",   f"+{premium*100:.1f}%",               True),
         ("평점 집계 숙소",  f"{stats.get('rating_count', 0)}개", False),
         ("이상치 제외 수",  f"{stats.get('outlier_count', 0)}개",False),
+        ("시장 예약률 (90일)", f"{avg_calendar_occ*100:.1f}%" if avg_calendar_occ is not None else "수집 중단", True),
     ]
 
     for i, (k, v, hl) in enumerate(sub_kpis):
@@ -996,7 +1052,7 @@ def _build_revenue_sheet(wb, f, scenarios, adr_clean, premium, market_score,
     ws.set_row(r, 30)
 
     r += 1
-    note = ("⚠ 이 수치는 업계 평균 점유율 기반 가정치입니다. 실제 매출과 다를 수 있으며, "
+    note = ("⚠ 이 수치는 업계 평균 예약률 기반 가정치입니다. 실제 매출과 다를 수 있으며, "
             "임대료·대출 상환은 포함되지 않습니다.")
     warn_fmt = wb.add_format({
         "bold": True, "font_size": 9, "font_color": C_RED,
@@ -1041,7 +1097,7 @@ def _build_revenue_sheet(wb, f, scenarios, adr_clean, premium, market_score,
     r += 1
 
     rows_def = [
-        ("점유율 (가정)", "occ_pct",      "pct"),
+        ("예약률 (가정)", "occ_pct",      "pct"),
         ("예약일수 / 월", "booking_days", "days"),
         ("블렌디드 ADR",  "blend_adr",    "krw"),
         ("━ 총 매출",     "gross",        "krw"),
@@ -1098,7 +1154,7 @@ def _build_revenue_sheet(wb, f, scenarios, adr_clean, premium, market_score,
     ws.merge_range(r, 0, r+2, 3,
         "* 영업이익 = 순 매출 - 청소비 - 월 운영비 (임대료·대출 상환·세금 별도)\n"
         "* 블렌디드 ADR = 평일 ADR × 5/7 + 주말 ADR × 2/7\n"
-        "* 업계 기준 점유율: 보수 40%, 기준 60%, 공격 70% — 지역·계절에 따라 다름",
+        "* 업계 기준 예약률: 보수 40%, 기준 60%, 공격 70% — 지역·계절에 따라 다름",
         footnote_fmt)
     ws.set_row(r, 15); ws.set_row(r+1, 15); ws.set_row(r+2, 15)
 
@@ -1150,9 +1206,9 @@ def _build_demand_sheet(wb, f, demand, listings):
     ws.set_row(r, 30)
 
     r += 1
-    warn_txt = ("⚠ 이 섹션의 점유율 수치는 저신뢰도 추정치입니다.\n"
+    warn_txt = ("⚠ 이 섹션의 예약률 수치는 저신뢰도 추정치입니다.\n"
                 "가정: 평균 등록 기간 18개월, 리뷰 작성률 50%/70%/90% 범위\n"
-                "실제 점유율과 ±20%p 이상 오차가 발생할 수 있습니다.")
+                "실제 예약률과 ±20%p 이상 오차가 발생할 수 있습니다.")
     wfmt = wb.add_format({
         "bold": True, "font_size": 9, "font_color": C_RED,
         "bg_color": C_LIGHT_RED, "border": 1, "border_color": C_RED,
@@ -1193,9 +1249,9 @@ def _build_demand_sheet(wb, f, demand, listings):
         r += 1
 
     r += 1
-    ws.merge_range(r, 0, r, 3, "■ 점유율 추정 범위 (저신뢰도)", f["section"])
+    ws.merge_range(r, 0, r, 3, "■ 예약률 추정 범위 (저신뢰도)", f["section"])
     r += 1
-    hdrs = ["시나리오", "리뷰 작성률 가정", "추정 점유율", "해석"]
+    hdrs = ["시나리오", "리뷰 작성률 가정", "추정 예약률", "해석"]
     for c, h in enumerate(hdrs):
         ws.write(r, c, h, f["header"])
     r += 1
@@ -1225,8 +1281,8 @@ def _build_demand_sheet(wb, f, demand, listings):
     ws.merge_range(r, 0, r+1, 3,
         f"계산식: 월 평균리뷰({demand.get('avg_review_count',0):.1f}개) "
         f"÷ 가정 등록기간({demand.get('assumed_months',18)}개월) "
-        f"÷ 리뷰작성률 ÷ 30일 = 점유율\n"
-        "※ 실제 체크아웃 데이터 없이는 정확한 점유율 산출 불가. "
+        f"÷ 리뷰작성률 ÷ 30일 = 예약률\n"
+        "※ 실제 체크아웃 데이터 없이는 정확한 예약률 산출 불가. "
         "의사결정 보조 지표로만 활용하세요.",
         foot)
 
@@ -1359,6 +1415,9 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
     r = _item(r, "블렌디드 ADR 계산",
               "평일 ADR × 5/7 + 주말 ADR × 2/7 (주 7일 중 평일 5일, 주말 2일 가정).")
     r = _note(r, "※ 임대료, 대출 상환, 감가상각, 세금은 포함되지 않습니다. 의사결정 보조 지표로만 활용하세요.")
+    r = _item(r, "예약률 시나리오 (가정)",
+              "하/기/상 세 수치는 '이 정도면 얼마나 벌까?'를 시뮬레이션하는 가정값입니다. "
+              "M 모드 캘린더 수집으로 실제 시장 예약률도 함께 표시됩니다.")
     r += 1
 
     if is_internal:
@@ -1390,15 +1449,15 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
         r += 1
 
         # ── 섹션 8: 수요 추정 ──────────────────────────────────────
-        r = _section(r, "📈  수요 추정 방법 (저신뢰도)")
+        r = _section(r, "📈  예약률 추정 방법 (저신뢰도)")
         r = _item(r, "계산식",
-                  "추정 점유율 = (월 평균리뷰 ÷ 가정 등록기간) ÷ 리뷰작성률 ÷ 30일", True)
+                  "추정 예약률 = (월 평균리뷰 ÷ 가정 등록기간) ÷ 리뷰작성률 ÷ 30일", True)
         r = _item(r, "등록기간 가정 (18개월)",
                   "숙소의 실제 등록일을 알 수 없어 평균 18개월로 가정합니다.")
         r = _item(r, "리뷰 작성률 시나리오",
                   "예약 대비 리뷰 작성 비율을 50%(낙관) / 70%(기준) / 90%(보수) 세 시나리오로 계산합니다.")
         r = _note(r,
-                  "※ 실제 체크아웃 데이터 없이는 정확한 점유율 산출이 불가합니다. "
+                  "※ 실제 체크아웃 데이터 없이는 정확한 예약률 산출이 불가합니다. "
                   "실제와 ±20%p 이상 오차가 발생할 수 있습니다. 참고 지표로만 활용하세요.")
 
 
@@ -1416,11 +1475,12 @@ def build_client_report(
     cleaning_fee: int = 80000,
     avg_stay: float = 2.0,
     monthly_ops: int = 0,
+    avg_calendar_occ: float | None = None,
 ) -> None:
     wb = xlsxwriter.Workbook(str(out_path))
     f  = _make_formats(wb)
 
-    _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, premium)
+    _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, premium, avg_calendar_occ=avg_calendar_occ)
     _build_market_sheet(wb, f, listings, stats, premium)
     _build_competition_sheet(wb, f, listings)
     _build_recommendation_sheet(wb, f, stats, premium)
@@ -1439,7 +1499,7 @@ def build_client_report(
 # 7. 내부용 리포트 빌더
 # ══════════════════════════════════════════════════════════════════
 
-def _build_dashboard_sheet(wb, f, listings, stats, premium, windows):
+def _build_dashboard_sheet(wb, f, listings, stats, premium, windows, avg_calendar_occ=None):
     ws = wb.add_worksheet("📋 대시보드")
 
     ws.set_column(0, 0, 22)
@@ -1474,6 +1534,7 @@ def _build_dashboard_sheet(wb, f, listings, stats, premium, windows):
         ("표준편차",          f"₩{stats.get('stdev', 0):,.0f}",                         False),
         ("주말 프리미엄",     f"+{premium*100:.1f}%",                                   True),
         ("평균 평점",         f"{stats.get('avg_rating', 0):.2f}",                      False),
+        ("시장 예약률 (90일)", f"{avg_calendar_occ*100:.1f}%" if avg_calendar_occ is not None else "-", True),
     ]
 
     for i, (k, v, hl) in enumerate(kpis):
@@ -1549,6 +1610,7 @@ def _build_rawdata_sheet(wb, f, listings, stats):
         ("평일가",        "price_weekday",   14),
         ("주말가",        "price_weekend",   14),
         ("1박가",         "price_per_night", 14),
+        ("예약률",        "calendar_occ",    9),
         ("최대인원",      "max_guests",      8),
         ("침대종류",      "bed_types",       22),
         ("소개글",        "description",     40),
@@ -1608,6 +1670,10 @@ def _build_rawdata_sheet(wb, f, listings, stats):
             elif field in ("latitude", "longitude"):
                 ws.write(row, ci, lst.get(field) or 0,
                          wb.add_format({"num_format": "0.0000", "bg_color": "#FFDAD5" if oo else ("#EBF3FB" if alt else "#FFFFFF"), "border": 1, "border_color": "#BDD7EE"}))
+            elif field == "calendar_occ":
+                v = lst.get(field)
+                pf = wb.add_format({"num_format": "0.0%", "bg_color": "#FFDAD5" if oo else ("#EBF3FB" if alt else "#FFFFFF"), "border": 1, "border_color": "#BDD7EE", "align": "center"})
+                ws.write(row, ci, v if v is not None else "", pf)
             else:
                 ws.write(row, ci, str(lst.get(field) or ""), base_fmt)
 
@@ -1828,11 +1894,12 @@ def build_internal_report(
     collected: dict,
     out_path: Path,
     demand: dict | None = None,
+    avg_calendar_occ: float | None = None,
 ) -> None:
     wb = xlsxwriter.Workbook(str(out_path))
     f  = _make_formats(wb)
 
-    _build_dashboard_sheet(wb, f, listings, stats, premium, windows)
+    _build_dashboard_sheet(wb, f, listings, stats, premium, windows, avg_calendar_occ=avg_calendar_occ)
     _build_rawdata_sheet(wb, f, listings, stats)
     _build_segment_sheet(wb, f, listings)
     _build_pricedist_sheet(wb, f, listings, stats)
@@ -2456,7 +2523,7 @@ def run(
     if target_date: print(f" 기준 날짜: {target_date.isoformat()} 주간")
     if beds  is not None: print(f" 침실 필터: {beds}개")
     if baths is not None: print(f" 욕실 필터: {baths}개")
-    print(f" 점유율 가정: {occ_low*100:.0f}% / {occ_base*100:.0f}% / {occ_high*100:.0f}%")
+    print(f" 예약률 가정: {occ_low*100:.0f}% / {occ_base*100:.0f}% / {occ_high*100:.0f}%")
     print(f" 청소비: ₩{cleaning_fee:,} / 평균 체류: {avg_nights}박")
 
     print(f"\n[1/5] 지오코딩: {query}")
@@ -2475,11 +2542,14 @@ def run(
     stats   = compute_stats(listings)
     premium = compute_weekend_premium(listings)
     windows = collected["windows"]
+    avg_calendar_occ = collected.get("avg_calendar_occ")
 
     print(f"      평균가: ₩{stats.get('mean', 0):,.0f}")
     print(f"      중앙값: ₩{stats.get('median', 0):,.0f}")
     print(f"      주말 프리미엄: +{premium*100:.1f}%")
     print(f"      이상치: {stats.get('outlier_count', 0)}개 제거")
+    if avg_calendar_occ is not None:
+        print(f"      시장 평균 예약률 (90일): {avg_calendar_occ*100:.1f}%")
 
     print(f"\n[4/5] v3 분석 (체감 ADR · 수요 추정 · 시장 매력도 · 수익 시뮬레이터)")
     eff_adr      = compute_effective_adr(listings)
@@ -2501,7 +2571,7 @@ def run(
     )
 
     print(f"      체감 ADR (총가): ₩{eff_adr.get('mean', 0):,.0f}")
-    print(f"      수요 추정 점유율 (기준 70% 작성률): {demand.get('occ_estimates', {}).get('mid', 0):.1f}%")
+    print(f"      수요 추정 예약률 (기준 70% 작성률): {demand.get('occ_estimates', {}).get('mid', 0):.1f}%")
     print(f"      시장 매력도: {market_score['total']}점 / 100점 ({market_score['judgment']})")
     print(f"      기준 시나리오 월 영업이익: ₩{scenarios[1]['op_profit']:,}")
 
@@ -2517,6 +2587,7 @@ def run(
             scenarios=scenarios, market_score=market_score,
             cleaning_fee=cleaning_fee, avg_stay=avg_nights,
             monthly_ops=monthly_cost,
+            avg_calendar_occ=avg_calendar_occ,
         )
 
     if output_mode in ("both", "internal"):
@@ -2524,6 +2595,7 @@ def run(
         build_internal_report(
             listings, query, beds, baths, windows, stats, premium, collected, out_internal,
             demand=demand,
+            avg_calendar_occ=avg_calendar_occ,
         )
 
     if output_mode in ("both", "client"):
