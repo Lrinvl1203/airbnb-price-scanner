@@ -6,6 +6,8 @@ Airbnb 시장 분석 리포트 생성기
 from __future__ import annotations
 
 import argparse
+import html
+import json
 import math
 import re
 import shutil
@@ -2182,9 +2184,11 @@ main { padding: 48px 0 80px; }
 .r3 { background: #F0C080; color: #7A4F00; }
 .rN { background: var(--bg); color: var(--text-3); }
 .listing-name {
-  font-size: 13px; font-weight: 700; color: var(--text-1);
+  display: block; font-size: 13px; font-weight: 700; color: var(--text-1);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-decoration: none;
 }
+.listing-name:hover { color: var(--blue); }
 .listing-meta { font-size: 11px; color: var(--text-2); margin-top: 3px; }
 .listing-price { text-align: right; flex-shrink: 0; }
 .price-main { font-size: 15px; font-weight: 800; color: var(--text-1); }
@@ -2437,7 +2441,7 @@ def build_html_report(
             f'<div class="listing-row">'
             f'<div class="rank-badge {r_cls}">{rank}</div>'
             f'<div>'
-            f'<div class="listing-name">{l.get("title","")[:42]}</div>'
+            f'{_listing_title_link(l, class_name="listing-name", limit=42)}'
             f'<div class="listing-meta">'
             f'{sup}<span class="chip {c_cls}">{ht}</span>'
             f'&nbsp;·&nbsp;{beds_n}침실 {baths_s}욕실'
@@ -2623,6 +2627,1047 @@ def build_html_report(
     print(f"[OK] HTML 저장: {out_path.name}")
 
 
+_CONSULT_HTML_CSS = """
+*, *::before, *::after { box-sizing: border-box; }
+:root {
+  --blue: #0066cc;
+  --blue-strong: #0057b8;
+  --blue-soft: #e8f2ff;
+  --canvas: #ffffff;
+  --parchment: #f5f5f7;
+  --ink: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #86868b;
+  --hairline: #d2d2d7;
+  --tile: #272729;
+  --tile-2: #2a2a2c;
+  --tile-text: #ffffff;
+  --good: #087f5b;
+  --warn: #b25e00;
+  --bad: #c92a2a;
+  --radius-lg: 18px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+}
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: 0;
+}
+button, input { font: inherit; letter-spacing: 0; }
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(245, 245, 247, 0.86);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.topbar-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  height: 52px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand { font-size: 15px; font-weight: 600; }
+.nav-actions { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+.nav-actions a { color: var(--blue); text-decoration: none; }
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+  color: #fff !important;
+}
+.nav-pill:active, .pill:active { transform: scale(0.96); }
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+.section { padding: 78px 0; }
+.section.parchment { background: var(--parchment); }
+.section.dark { background: var(--tile); color: var(--tile-text); }
+.hero { padding: 76px 0 64px; background: var(--canvas); }
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(320px, 0.72fr);
+  gap: 44px;
+  align-items: center;
+}
+.eyebrow {
+  margin: 0 0 16px;
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 600;
+}
+h1, h2, h3, p { margin-top: 0; }
+h1 {
+  margin-bottom: 16px;
+  font-size: 56px;
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.lead {
+  max-width: 760px;
+  margin-bottom: 26px;
+  color: var(--muted);
+  font-size: 21px;
+  line-height: 1.45;
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--faint);
+  font-size: 13px;
+}
+.meta-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: #fff;
+}
+.decision-panel {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  background: var(--parchment);
+}
+.decision-label {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.decision-title {
+  margin-bottom: 12px;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 600;
+}
+.decision-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.score-number { color: var(--blue); font-size: 52px; line-height: 1; font-weight: 600; }
+.score-denom { color: var(--muted); font-size: 14px; }
+.decision-copy { margin-bottom: 0; color: var(--muted); font-size: 15px; }
+.section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(280px, 0.55fr);
+  gap: 32px;
+  align-items: end;
+  margin-bottom: 34px;
+}
+.section-kicker {
+  margin-bottom: 10px;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+.section-title {
+  margin-bottom: 0;
+  font-size: 40px;
+  line-height: 1.15;
+  font-weight: 600;
+}
+.section-note {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+.dark .section-kicker, .dark a { color: #2997ff; }
+.dark .section-note { color: #cccccc; }
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.metric-tile, .utility-card, .price-tile, .factor-tile, .control-panel, .result-panel {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+}
+.metric-tile { padding: 24px; }
+.metric-label {
+  min-height: 36px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.metric-value {
+  margin-bottom: 8px;
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 600;
+}
+.metric-sub { color: var(--faint); font-size: 13px; }
+.price-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+.price-tile {
+  background: var(--tile-2);
+  border-color: rgba(255, 255, 255, 0.12);
+  padding: 28px;
+  color: #fff;
+}
+.price-tile.featured {
+  background: #fff;
+  color: var(--ink);
+}
+.price-purpose {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  color: #cccccc;
+  font-size: 13px;
+  font-weight: 600;
+}
+.featured .price-purpose { background: var(--blue-soft); color: var(--blue); }
+.price-name {
+  margin: 24px 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+}
+.price-main {
+  margin-bottom: 10px;
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 600;
+}
+.price-weekend {
+  margin-bottom: 22px;
+  color: #cccccc;
+  font-size: 15px;
+}
+.featured .price-weekend { color: var(--muted); }
+.price-desc {
+  margin-bottom: 0;
+  color: #cccccc;
+  font-size: 14px;
+}
+.featured .price-desc { color: var(--muted); }
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.factor-tile { padding: 22px; }
+.factor-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.factor-name { font-size: 15px; font-weight: 600; }
+.factor-score { color: var(--blue); font-size: 18px; font-weight: 600; }
+.factor-track {
+  height: 8px;
+  margin-bottom: 13px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--parchment);
+}
+.factor-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+.factor-note { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+.reason-list {
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.reason-list li {
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 14px;
+}
+.sim-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+  gap: 22px;
+  align-items: start;
+}
+.control-panel, .result-panel { padding: 26px; }
+.control-group { display: grid; gap: 22px; }
+.control-row {
+  display: grid;
+  gap: 9px;
+}
+.control-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.control-value { color: var(--ink); }
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--blue);
+}
+.result-hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: start;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.result-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+.result-profit {
+  margin-top: 8px;
+  color: var(--good);
+  font-size: 46px;
+  line-height: 1.05;
+  font-weight: 600;
+}
+.result-profit.negative { color: var(--bad); }
+.result-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+.result-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 24px 0;
+}
+.mini-metric {
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--parchment);
+}
+.mini-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.mini-value { margin-top: 6px; font-size: 20px; font-weight: 600; }
+.waterfall { display: grid; gap: 12px; }
+.water-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 116px;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.water-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--parchment);
+}
+.water-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+.water-fill.cost { background: var(--faint); }
+.water-fill.profit { background: var(--good); }
+.water-fill.loss { background: var(--bad); }
+.result-explain {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
+  gap: 22px;
+}
+.utility-card { padding: 24px; }
+.utility-title {
+  margin-bottom: 20px;
+  font-size: 21px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+.compare-row, .dist-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 94px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.compare-row:last-child, .dist-row:last-child { border-bottom: 0; }
+.bar-track {
+  height: 12px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--parchment);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--blue);
+}
+.row-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+.row-value { text-align: right; font-size: 13px; font-weight: 600; }
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 14px;
+}
+table a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+table a:hover { color: var(--blue); }
+th, td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--parchment);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.footer {
+  padding: 44px 0;
+  background: var(--parchment);
+  color: var(--muted);
+  font-size: 12px;
+}
+.footer strong { color: var(--ink); }
+@media (max-width: 980px) {
+  .hero-grid, .section-head, .sim-grid, .evidence-grid { grid-template-columns: 1fr; }
+  .summary-grid, .factor-grid { grid-template-columns: repeat(2, 1fr); }
+  h1 { font-size: 40px; }
+  .section-title { font-size: 34px; }
+}
+@media (max-width: 640px) {
+  .topbar-inner, .shell { padding-left: 18px; padding-right: 18px; }
+  .nav-actions a:not(.nav-pill) { display: none; }
+  .section { padding: 54px 0; }
+  .hero { padding: 54px 0 46px; }
+  h1 { font-size: 34px; }
+  .lead { font-size: 18px; }
+  .summary-grid, .price-grid, .factor-grid, .result-metrics { grid-template-columns: 1fr; }
+  .result-hero { grid-template-columns: 1fr; }
+  .result-profit { font-size: 36px; }
+  .water-row, .compare-row, .dist-row { grid-template-columns: 78px minmax(0, 1fr) 82px; }
+}
+"""
+
+
+_CONSULT_HTML_JS = """
+(() => {
+  const payload = JSON.parse(document.getElementById("report-data").textContent);
+  const fmt = new Intl.NumberFormat("ko-KR");
+  const byId = (id) => document.getElementById(id);
+  const won = (value) => `${fmt.format(Math.round(value))}원`;
+  const pct = (value) => `${Number(value).toFixed(1)}%`;
+  const setAll = (key, text) => {
+    document.querySelectorAll(`[data-out="${key}"]`).forEach((el) => { el.textContent = text; });
+  };
+  const valueOf = (id) => Number(byId(id).value);
+
+  function setBar(key, amount, maxAmount, kind) {
+    const fill = document.querySelector(`[data-bar="${key}"]`);
+    if (!fill) return;
+    fill.style.width = `${Math.max(2, Math.min(100, Math.abs(amount) / Math.max(1, maxAmount) * 100))}%`;
+    fill.className = `water-fill ${kind || ""}`.trim();
+  }
+
+  function update() {
+    const weekday = valueOf("weekdayPrice");
+    const weekend = valueOf("weekendPrice");
+    const occupancy = valueOf("occupancy") / 100;
+    const weekendShare = valueOf("weekendShare") / 100;
+    const avgStay = Math.max(0.5, valueOf("avgStay"));
+    const cleaningFee = valueOf("cleaningFee");
+    const monthlyCost = valueOf("monthlyCost");
+    const hostFee = valueOf("hostFee") / 100;
+
+    const monthDays = 30;
+    const bookingDays = occupancy * monthDays;
+    const weekdayShare = 1 - weekendShare;
+    const blendAdr = weekday * weekdayShare + weekend * weekendShare;
+    const gross = blendAdr * bookingDays;
+    const platformFee = gross * hostFee;
+    const cleanings = Math.max(1, bookingDays / avgStay);
+    const cleaningCost = cleanings * cleaningFee;
+    const profit = gross - platformFee - cleaningCost - monthlyCost;
+    const annualProfit = profit * 12;
+    const unitMargin = blendAdr * (1 - hostFee) - (cleaningFee / avgStay);
+    const breakEvenOcc = unitMargin > 0 ? Math.min(100, Math.max(0, monthlyCost / (monthDays * unitMargin) * 100)) : 100;
+    const marginPct = gross > 0 ? profit / gross * 100 : 0;
+    const premiumPct = weekday > 0 ? ((weekend / weekday) - 1) * 100 : 0;
+
+    setAll("weekdayPrice", won(weekday));
+    setAll("weekendPrice", won(weekend));
+    setAll("occupancy", `${Math.round(occupancy * 100)}%`);
+    setAll("weekendShare", `${Math.round(weekendShare * 100)}%`);
+    setAll("avgStay", `${avgStay.toFixed(1)}박`);
+    setAll("cleaningFee", won(cleaningFee));
+    setAll("monthlyCost", won(monthlyCost));
+    setAll("hostFee", `${valueOf("hostFee").toFixed(1)}%`);
+    setAll("blendAdr", won(blendAdr));
+    setAll("gross", won(gross));
+    setAll("platformFee", won(platformFee));
+    setAll("cleaningCost", won(cleaningCost));
+    setAll("profit", won(profit));
+    setAll("annualProfit", won(annualProfit));
+    setAll("breakEvenOcc", pct(breakEvenOcc));
+    setAll("marginPct", pct(marginPct));
+    setAll("premiumPct", `${premiumPct >= 0 ? "+" : ""}${premiumPct.toFixed(1)}%`);
+
+    const profitEl = document.querySelector("[data-out='profit']");
+    if (profitEl) profitEl.classList.toggle("negative", profit < 0);
+
+    const maxAmount = Math.max(Math.abs(gross), Math.abs(platformFee), Math.abs(cleaningCost), Math.abs(monthlyCost), Math.abs(profit), 1);
+    setBar("gross", gross, maxAmount, "");
+    setBar("platformFee", platformFee, maxAmount, "cost");
+    setBar("cleaningCost", cleaningCost, maxAmount, "cost");
+    setBar("monthlyCost", monthlyCost, maxAmount, "cost");
+    setBar("profit", profit, maxAmount, profit >= 0 ? "profit" : "loss");
+
+    const label = byId("scenarioLabel");
+    const explain = byId("scenarioExplain");
+    if (profit < 0) {
+      label.textContent = "손실 구조";
+      explain.textContent = "현재 가정에서는 운영비를 회수하지 못합니다. 가격을 올리거나, 고정비와 청소비를 낮추거나, 예약률을 더 보수적으로 다시 검토해야 합니다.";
+    } else if (marginPct >= 35) {
+      label.textContent = "건강한 구조";
+      explain.textContent = "매출 대비 남는 금액이 충분합니다. 가격을 급히 낮추기보다 리뷰 확보 속도와 주말 가격 탄력성을 같이 확인하는 편이 좋습니다.";
+    } else if (marginPct >= 18) {
+      label.textContent = "운영 가능";
+      explain.textContent = "월 이익은 남지만 여유가 크지는 않습니다. 초기에는 표준가로 시작하고, 예약 속도가 빠를 때 주말가부터 조정하는 전략이 적합합니다.";
+    } else {
+      label.textContent = "낮은 여유";
+      explain.textContent = "흑자는 가능하지만 비용 변화에 취약합니다. 청소비, 고정비, 평균 숙박일이 조금만 나빠져도 수익성이 흔들릴 수 있습니다.";
+    }
+  }
+
+  document.querySelectorAll("[data-control]").forEach((el) => el.addEventListener("input", update));
+  update();
+})();
+"""
+
+
+def _html_escape(value) -> str:
+    return html.escape("" if value is None else str(value), quote=True)
+
+
+def _listing_title_link(listing: dict, class_name: str = "", limit: int = 60) -> str:
+    title = (listing.get("title") or "숙소명 없음")[:limit]
+    label = _html_escape(title)
+    class_attr = f' class="{_html_escape(class_name)}"' if class_name else ""
+    url = str(listing.get("url") or "").strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return (
+            f'<a{class_attr} href="{_html_escape(url)}" '
+            f'target="_blank" rel="noopener noreferrer">{label}</a>'
+        )
+    return f"<span{class_attr}>{label}</span>"
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default: int = 0) -> int:
+    return int(round(_safe_float(value, default)))
+
+
+def _won(value) -> str:
+    return f"{_safe_int(value):,}원"
+
+
+def _pct_text(value) -> str:
+    return f"{_safe_float(value):+.1f}%"
+
+
+def build_html_report_consulting(
+    listings: list[dict],
+    query: str,
+    beds: int | None,
+    baths: float | None,
+    windows: list,
+    stats: dict,
+    premium: float,
+    out_path: Path,
+    market_score: dict | None = None,
+    scenarios: list[dict] | None = None,
+    demand: dict | None = None,
+    eff_adr: dict | None = None,
+    price_recs: dict | None = None,
+    cleaning_fee: int = 80_000,
+    avg_nights: float = 2.0,
+    monthly_cost: int = 0,
+    occ_low: float = 0.40,
+    occ_base: float = 0.60,
+    occ_high: float = 0.70,
+) -> None:
+    """Consulting-style, self-contained interactive HTML market report."""
+    if not listings:
+        print("[WARN] HTML: 숙소 없음, 건너뜀")
+        return
+
+    today = date.today().isoformat()
+    demand = demand or {}
+    market_score = market_score or {}
+    if price_recs is None:
+        price_recs = build_price_recommendations(
+            stats,
+            premium,
+            demand=demand,
+            cleaning_fee=cleaning_fee,
+            avg_stay_nights=avg_nights,
+        )
+
+    q = _html_escape(query)
+    total_cnt = len(listings)
+    indiv_lst = [l for l in listings if l.get("host_type") == "개인"]
+    comm_lst = [l for l in listings if l.get("host_type") == "상업용"]
+    avg_price = _safe_int(stats.get("mean_clean", stats.get("mean", 0)))
+    median = _safe_int(stats.get("median", 0))
+    p40 = _safe_int(stats.get("p40", 0))
+    p55 = _safe_int(stats.get("p55", 0))
+    p70 = _safe_int(stats.get("p70", 0))
+    p75 = _safe_int(stats.get("p75", 0))
+    avg_rating = _safe_float(stats.get("avg_rating", 0))
+    clean_count = _safe_int(stats.get("clean_count", total_cnt), total_cnt)
+
+    tier_by_key = {t["key"]: t for t in price_recs.get("tiers", [])}
+    starter = tier_by_key.get("starter", {"weekday": p40, "weekend": _safe_int(p40 * (1 + premium)), "purpose": "리뷰 확보"})
+    standard = tier_by_key.get("standard", {"weekday": p55, "weekend": _safe_int(p55 * (1 + premium)), "purpose": "기준가"})
+    premium_tier = tier_by_key.get("premium", {"weekday": p70, "weekend": _safe_int(p70 * (1 + premium)), "purpose": "프리미엄"})
+
+    std_weekday = _safe_int(standard.get("weekday", p55))
+    std_weekend = _safe_int(standard.get("weekend", std_weekday * (1 + premium)))
+    weekend_share_default = 29
+
+    cond_parts = []
+    if beds is not None:
+        cond_parts.append(f"{beds}침실")
+    if baths is not None:
+        cond_parts.append(f"{int(baths) if baths == int(baths) else baths}욕실")
+    cond_str = _html_escape(" ".join(cond_parts) if cond_parts else "전체")
+
+    wd_label = f"{windows[0][0]} ~ {windows[0][1]} 평일"
+    we_label = f"{windows[1][0]} ~ {windows[1][1]} 금-토"
+    ws_label = f"{windows[2][0]} ~ {windows[2][1]} 토-일"
+
+    score_total = _safe_int(market_score.get("total", 0))
+    judgment = market_score.get("judgment") or "검토 필요"
+    decision_copy_map = {
+        "적극 진입": "수요와 가격 탄력이 모두 양호합니다. 표준가로 시작하고, 주말 예약 속도가 빠르면 주말가부터 상향 조정하는 전략이 적합합니다.",
+        "조건부 진입": "진입은 가능하지만 비용과 리뷰 확보 속도를 같이 봐야 합니다. 처음에는 표준가 또는 스타터가를 쓰고, 2주 단위로 조정하는 편이 좋습니다.",
+        "보수적 접근": "가격을 높게 시작하기보다 리뷰 확보와 공실 관리가 우선입니다. 고정비가 높은 물건이면 수익 여유를 먼저 확인해야 합니다.",
+        "진입 미권장": "현재 수집 기준으로는 리스크가 큽니다. 임대료나 운영비가 낮은 특수 조건이 아니라면 보류하는 편이 합리적입니다.",
+    }
+    decision_copy = decision_copy_map.get(judgment, "표본과 비용 가정을 확인한 뒤 가격을 보수적으로 적용하는 편이 좋습니다.")
+
+    def tier_html(tier: dict, name: str, desc: str, featured: bool = False) -> str:
+        cls = "price-tile featured" if featured else "price-tile"
+        return (
+            f'<article class="{cls}">'
+            f'<div class="price-purpose">{_html_escape(tier.get("purpose", ""))}</div>'
+            f'<h3 class="price-name">{name}</h3>'
+            f'<div class="price-main">{_won(tier.get("weekday", 0))}</div>'
+            f'<div class="price-weekend">주말 {_won(tier.get("weekend", 0))}</div>'
+            f'<p class="price-desc">{desc}</p>'
+            f'</article>'
+        )
+
+    factor_items = [
+        ("수요 안정성", _safe_int(market_score.get("demand", 0)), f"평균 리뷰 {demand.get('avg_review_count', 0):.1f}개"),
+        ("주말 탄력성", _safe_int(market_score.get("weekend", 0)), f"주말 프리미엄 {_pct_text(premium * 100)}"),
+        ("가격 성장 여력", _safe_int(market_score.get("growth", 0)), f"P40 {_won(p40)} - P70 {_won(p70)}"),
+        ("품질 진입 장벽", _safe_int(market_score.get("quality", 0)), f"경쟁 평균 평점 {avg_rating:.2f}"),
+    ]
+    factor_html = ""
+    for name, score, note in factor_items:
+        width = max(0, min(100, score / 25 * 100))
+        factor_html += (
+            '<article class="factor-tile">'
+            '<div class="factor-top">'
+            f'<div class="factor-name">{name}</div>'
+            f'<div class="factor-score">{score}/25</div>'
+            '</div>'
+            '<div class="factor-track">'
+            f'<div class="factor-fill" style="width:{width:.0f}%"></div>'
+            '</div>'
+            f'<p class="factor-note">{_html_escape(note)}</p>'
+            '</article>'
+        )
+
+    reason_html = "".join(
+        f"<li>{_html_escape(reason)}</li>"
+        for reason in price_recs.get("explain", [])
+    )
+
+    wd_prices = [l["price_weekday"] for l in listings if l.get("price_weekday")]
+    we_prices = [l["price_weekend"] for l in listings if l.get("price_weekend")]
+    wd_avg = _safe_int(statistics.mean(wd_prices)) if wd_prices else 0
+    we_avg = _safe_int(statistics.mean(we_prices)) if we_prices else 0
+    max_compare = max(wd_avg, we_avg, 1)
+    compare_html = (
+        '<div class="compare-row">'
+        '<div class="row-label">평일</div>'
+        '<div class="bar-track"><div class="bar-fill" style="width:{:.1f}%"></div></div>'
+        '<div class="row-value">{}</div>'
+        '</div>'
+        '<div class="compare-row">'
+        '<div class="row-label">주말</div>'
+        '<div class="bar-track"><div class="bar-fill" style="width:{:.1f}%"></div></div>'
+        '<div class="row-value">{}</div>'
+        '</div>'
+    ).format(wd_avg / max_compare * 100, _won(wd_avg), we_avg / max_compare * 100, _won(we_avg))
+
+    dist = price_distribution(listings)
+    max_dist = max((d["count"] for d in dist), default=1) or 1
+    dist_html = ""
+    for bucket in dist:
+        count = bucket["count"]
+        if count == 0:
+            continue
+        width = max(2, count / max_dist * 100)
+        dist_html += (
+            '<div class="dist-row">'
+            f'<div class="row-label">{_html_escape(bucket["label"])}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:{width:.1f}%"></div></div>'
+            f'<div class="row-value">{count}개</div>'
+            '</div>'
+        )
+
+    top = sorted(
+        [l for l in listings if l.get("rating")],
+        key=lambda x: (x.get("rating", 0), x.get("review_count", 0) or 0),
+        reverse=True,
+    )[:10]
+    comp_rows = ""
+    for idx, l in enumerate(top, start=1):
+        wd_p = l.get("price_weekday") or l.get("price_per_night") or 0
+        we_p = l.get("price_weekend") or 0
+        title = _listing_title_link(l, limit=54)
+        host_type = _html_escape(l.get("host_type") or "-")
+        comp_rows += (
+            "<tr>"
+            f'<td class="num">{idx}</td>'
+            f"<td>{title}<br><span class=\"tag\">{host_type}</span></td>"
+            f'<td class="num">{_won(wd_p)}</td>'
+            f'<td class="num">{_won(we_p) if we_p else "-"}</td>'
+            f'<td class="num">{_safe_float(l.get("rating", 0)):.2f}</td>'
+            f'<td class="num">{_safe_int(l.get("review_count", 0))}</td>'
+            "</tr>"
+        )
+
+    price_max = max(250_000, _safe_int(max(std_weekday, std_weekend, p70, we_avg, avg_price) * 1.9 / 1000) * 1000)
+    price_min = max(10_000, min(std_weekday, std_weekend, p40 or std_weekday) // 2 // 1000 * 1000)
+    price_min = min(price_min, max(10_000, std_weekday - 50_000))
+
+    sim_payload = {
+        "weekdayPrice": std_weekday,
+        "weekendPrice": std_weekend,
+        "occupancy": round(occ_base * 100),
+        "avgStay": avg_nights,
+        "cleaningFee": cleaning_fee,
+        "monthlyCost": monthly_cost,
+        "hostFee": 3.0,
+        "weekendShare": weekend_share_default,
+    }
+    sim_json = json.dumps(sim_payload, ensure_ascii=False).replace("</", "<\\/")
+
+    controls = [
+        ("weekdayPrice", "평일가", price_min, price_max, 1000, std_weekday, "weekdayPrice"),
+        ("weekendPrice", "주말가", price_min, price_max, 1000, std_weekend, "weekendPrice"),
+        ("occupancy", "예약률", 10, 95, 1, round(occ_base * 100), "occupancy"),
+        ("weekendShare", "주말 예약 비중", 10, 60, 1, weekend_share_default, "weekendShare"),
+        ("avgStay", "평균 숙박일", 1, 7, 0.1, avg_nights, "avgStay"),
+        ("cleaningFee", "청소비", 0, 300000, 5000, cleaning_fee, "cleaningFee"),
+        ("monthlyCost", "월 고정비", 0, 5000000, 50000, monthly_cost, "monthlyCost"),
+        ("hostFee", "플랫폼 수수료", 0, 20, 0.5, 3.0, "hostFee"),
+    ]
+    control_html = ""
+    for control_id, label, min_v, max_v, step, value, out_key in controls:
+        control_html += (
+            '<label class="control-row" for="{id}">'
+            '<span class="control-label"><span>{label}</span><span class="control-value" data-out="{out_key}"></span></span>'
+            '<input data-control id="{id}" type="range" min="{min}" max="{max}" step="{step}" value="{value}">'
+            '</label>'
+        ).format(
+            id=control_id,
+            label=label,
+            out_key=out_key,
+            min=min_v,
+            max=max_v,
+            step=step,
+            value=value,
+        )
+
+    summary_sub = f"개인 {len(indiv_lst)}개 / 상업용 {len(comm_lst)}개"
+    html_text = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{q} 시장 분석 리포트</title>
+  <style>{_CONSULT_HTML_CSS}</style>
+</head>
+<body>
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">Airbnb Market Report</div>
+      <div class="nav-actions">
+        <a href="#recommendation">추천가</a>
+        <a href="#evidence">근거</a>
+        <a class="nav-pill" href="#simulator">시뮬레이터</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="shell hero-grid">
+      <div>
+        <p class="eyebrow">Market strategy memo</p>
+        <h1>{q} 가격 전략</h1>
+        <p class="lead">{cond_str} 조건에서 평일과 주말 가격을 비교하고, 실제 운영비를 넣어 월 수익을 바로 조정해볼 수 있는 시장 분석 리포트입니다.</p>
+        <div class="hero-meta">
+          <span class="meta-chip">분석일 {today}</span>
+          <span class="meta-chip">수집 숙소 {total_cnt}개</span>
+          <span class="meta-chip">{wd_label}</span>
+          <span class="meta-chip">{we_label}</span>
+          <span class="meta-chip">{ws_label}</span>
+        </div>
+      </div>
+      <aside class="decision-panel">
+        <div class="decision-label">컨설팅 관점 결론</div>
+        <h2 class="decision-title">{_html_escape(judgment)}</h2>
+        <div class="decision-score">
+          <span class="score-number">{score_total}</span>
+          <span class="score-denom">/ 100점</span>
+        </div>
+        <p class="decision-copy">{_html_escape(decision_copy)}</p>
+      </aside>
+    </div>
+  </header>
+
+  <section class="section parchment">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Executive summary</div>
+          <h2 class="section-title">먼저 봐야 할 숫자</h2>
+        </div>
+        <p class="section-note">가격은 이상치를 제거한 숙소 {clean_count}개 기준입니다. 실제 매출은 예약률, 평균 숙박일, 청소비에 따라 달라집니다.</p>
+      </div>
+      <div class="summary-grid">
+        <article class="metric-tile">
+          <div class="metric-label">추천 표준 평일가</div>
+          <div class="metric-value">{_won(std_weekday)}</div>
+          <div class="metric-sub">수익 계산의 기본 가격</div>
+        </article>
+        <article class="metric-tile">
+          <div class="metric-label">추천 표준 주말가</div>
+          <div class="metric-value">{_won(std_weekend)}</div>
+          <div class="metric-sub">평일 대비 {_pct_text((std_weekend / std_weekday - 1) * 100 if std_weekday else 0)}</div>
+        </article>
+        <article class="metric-tile">
+          <div class="metric-label">시장 평균가</div>
+          <div class="metric-value">{_won(avg_price)}</div>
+          <div class="metric-sub">중앙값 {_won(median)}</div>
+        </article>
+        <article class="metric-tile">
+          <div class="metric-label">시장 표본</div>
+          <div class="metric-value">{total_cnt}개</div>
+          <div class="metric-sub">{_html_escape(summary_sub)}</div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="recommendation" class="section dark">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Pricing recommendation</div>
+          <h2 class="section-title">가격은 세 단계로 시작합니다</h2>
+        </div>
+        <p class="section-note">처음부터 하나의 정답을 고정하지 말고, 예약 속도와 리뷰 확보 상황에 맞춰 단계적으로 조정하는 방식입니다.</p>
+      </div>
+      <div class="price-grid">
+        {tier_html(starter, "스타터", "신규 숙소나 리뷰 확보가 우선일 때 쓰는 낮은 진입가입니다.")}
+        {tier_html(standard, "표준", "가장 먼저 적용해볼 기준가입니다. 아래 시뮬레이터도 이 가격에서 시작합니다.", True)}
+        {tier_html(premium_tier, "프리미엄", "사진, 위치, 후기, 객실 상태가 충분히 강할 때 테스트할 수 있는 상단 가격입니다.")}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Decision logic</div>
+          <h2 class="section-title">왜 이렇게 판단했나</h2>
+        </div>
+        <p class="section-note">점수는 수요, 주말 탄력성, 가격 성장 여력, 경쟁 품질 장벽을 각각 25점으로 보아 합산했습니다.</p>
+      </div>
+      <div class="factor-grid">{factor_html}</div>
+      <ul class="reason-list">{reason_html}</ul>
+    </div>
+  </section>
+
+  <section id="simulator" class="section parchment">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Interactive simulator</div>
+          <h2 class="section-title">가정값을 바꿔 수익을 확인하세요</h2>
+        </div>
+        <p class="section-note">슬라이더를 움직이면 월 매출, 비용, 영업이익, 손익분기 예약률이 즉시 바뀝니다. 외부 서버 없이 이 HTML 안에서만 계산됩니다.</p>
+      </div>
+      <div class="sim-grid">
+        <div class="control-panel">
+          <div class="control-group">{control_html}</div>
+        </div>
+        <div class="result-panel">
+          <div class="result-hero">
+            <div>
+              <div class="result-label">월 예상 영업이익</div>
+              <div class="result-profit" data-out="profit"></div>
+            </div>
+            <div class="result-pill" id="scenarioLabel">계산 중</div>
+          </div>
+          <div class="result-metrics">
+            <div class="mini-metric"><div class="mini-label">월 총매출</div><div class="mini-value" data-out="gross"></div></div>
+            <div class="mini-metric"><div class="mini-label">블렌디드 ADR</div><div class="mini-value" data-out="blendAdr"></div></div>
+            <div class="mini-metric"><div class="mini-label">손익분기 예약률</div><div class="mini-value" data-out="breakEvenOcc"></div></div>
+            <div class="mini-metric"><div class="mini-label">연 예상 영업이익</div><div class="mini-value" data-out="annualProfit"></div></div>
+          </div>
+          <div class="waterfall">
+            <div class="water-row"><span>총매출</span><div class="water-track"><div data-bar="gross" class="water-fill"></div></div><strong data-out="gross"></strong></div>
+            <div class="water-row"><span>수수료</span><div class="water-track"><div data-bar="platformFee" class="water-fill cost"></div></div><strong data-out="platformFee"></strong></div>
+            <div class="water-row"><span>청소비</span><div class="water-track"><div data-bar="cleaningCost" class="water-fill cost"></div></div><strong data-out="cleaningCost"></strong></div>
+            <div class="water-row"><span>고정비</span><div class="water-track"><div data-bar="monthlyCost" class="water-fill cost"></div></div><strong data-out="monthlyCost"></strong></div>
+            <div class="water-row"><span>이익</span><div class="water-track"><div data-bar="profit" class="water-fill profit"></div></div><strong data-out="profit"></strong></div>
+          </div>
+          <p class="result-explain" id="scenarioExplain"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="evidence" class="section">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Market evidence</div>
+          <h2 class="section-title">시장에서 확인한 근거</h2>
+        </div>
+        <p class="section-note">평일/주말 가격 차이와 가격대 분포를 먼저 보고, 상세 숙소는 아래 표에서 확인합니다.</p>
+      </div>
+      <div class="evidence-grid">
+        <article class="utility-card">
+          <h3 class="utility-title">평일과 주말 가격 차이</h3>
+          {compare_html}
+          <p class="section-note" style="margin-top:16px">수집 기준 주말 프리미엄은 {_pct_text(premium * 100)}입니다.</p>
+        </article>
+        <article class="utility-card">
+          <h3 class="utility-title">가격대 분포</h3>
+          {dist_html}
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section parchment">
+    <div class="shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Competitive set</div>
+          <h2 class="section-title">상위 경쟁 숙소</h2>
+        </div>
+        <p class="section-note">평점과 리뷰 수를 같이 보아, 가격이 높아도 설득력이 있는 숙소를 우선 확인합니다.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th class="num">#</th><th>숙소</th><th class="num">평일가</th><th class="num">주말가</th><th class="num">평점</th><th class="num">리뷰</th></tr>
+          </thead>
+          <tbody>{comp_rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="shell">
+      <strong>데이터 출처:</strong> Airbnb.com 비공식 수집, 개인 분석 목적<br>
+      <strong>수집창:</strong> {_html_escape(wd_label)} / {_html_escape(we_label)} / {_html_escape(ws_label)}<br>
+      본 리포트는 수집 시점 기준의 의사결정 보조 자료입니다. 실제 예약률, 임대료, 세금, 플랫폼 정책, 지역 규제에 따라 결과는 달라질 수 있습니다.
+    </div>
+  </footer>
+
+  <script id="report-data" type="application/json">{sim_json}</script>
+  <script>{_CONSULT_HTML_JS}</script>
+</body>
+</html>
+"""
+
+    out_path.write_text(html_text, encoding="utf-8")
+    print(f"[OK] HTML 저장: {out_path.name}")
+
+
 # ══════════════════════════════════════════════════════════════════
 # 9. 메인
 # ══════════════════════════════════════════════════════════════════
@@ -2754,10 +3799,22 @@ def run(
         )
 
     if output_mode in ("both", "client"):
-        out_html = base / f"{query}_시장분석_{ftag}.html"
-        build_html_report(listings, query, beds, baths, windows, stats, premium, out_html,
-                          market_score=market_score, scenarios=scenarios,
-                          demand=demand, eff_adr=eff_adr, price_recs=price_recs)
+        out_html_legacy = base / f"{query}_시장분석_기존_{ftag}.html"
+        build_html_report(
+            listings, query, beds, baths, windows, stats, premium, out_html_legacy,
+            market_score=market_score, scenarios=scenarios,
+            demand=demand, eff_adr=eff_adr, price_recs=price_recs,
+        )
+
+        out_html = base / f"{query}_시장분석_컨설팅_{ftag}.html"
+        build_html_report_consulting(
+            listings, query, beds, baths, windows, stats, premium, out_html,
+            market_score=market_score, scenarios=scenarios,
+            demand=demand, eff_adr=eff_adr, price_recs=price_recs,
+            cleaning_fee=cleaning_fee, avg_nights=avg_nights,
+            monthly_cost=monthly_cost,
+            occ_low=occ_low, occ_base=occ_base, occ_high=occ_high,
+        )
 
     print(f"\n{'='*60}")
     print(f" 완료!  output/{folder_ts}_{query}/")
@@ -2766,7 +3823,8 @@ def run(
     if output_mode in ("both", "internal"):
         print(f"  XLSX 내부용: {query}_시장분석_내부용_{ftag}.xlsx")
     if output_mode in ("both", "client"):
-        print(f"  HTML: {query}_시장분석_{ftag}.html")
+        print(f"  HTML 기존: {query}_시장분석_기존_{ftag}.html")
+        print(f"  HTML 컨설팅: {query}_시장분석_컨설팅_{ftag}.html")
     print(f"{'='*60}\n")
     return base
 
