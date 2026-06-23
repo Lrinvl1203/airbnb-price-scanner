@@ -8,16 +8,33 @@ import importlib
 import io
 import os
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import messagebox, ttk
 
 from tkcalendar import DateEntry
 
 PROJECT_DIR = Path(__file__).parent
+
+# ── 로그 필터: 수집 중 개별 항목 라인 제거 ────────────────────────────
+_STEP_RE    = re.compile(r'\[(\d+)/(\d+)\]\s*(.*)')
+_VERBOSE_RE = re.compile(r'^\d+\s{2,}')   # "  1  숙소명..." 형식
+
+def _is_verbose(s: str) -> bool:
+    t = s.strip()
+    if not t:
+        return True
+    if _VERBOSE_RE.match(t):
+        return True
+    if re.match(r'^[-─━=]{4,}$', t):      # 구분선
+        return True
+    if '번호' in t and '숙소명' in t:      # 테이블 헤더
+        return True
+    return False
 
 
 # ── stdout 리다이렉터 ──────────────────────────────────────────────────
@@ -27,11 +44,39 @@ class _QueueWriter(io.TextIOBase):
 
     def write(self, s: str) -> int:
         if s:
-            self._q.put(s)           # 일반 문자열로 넣음
+            m = _STEP_RE.search(s)
+            if m:
+                n, total = int(m.group(1)), int(m.group(2))
+                desc = m.group(3).strip().split("(")[0].strip()
+                self._q.put(("PROGRESS", n, total, desc))
+            if not _is_verbose(s):
+                self._q.put(s)
         return len(s)
 
     def flush(self) -> None:
         pass
+
+
+# ── DateEntry 내비게이션 버그 픽스 ────────────────────────────────────
+class _FixedDateEntry(DateEntry):
+    """월·년 이동 화살표 클릭 시 달력이 닫히는 tkcalendar 버그 수정.
+
+    원인: _calendar 위젯의 <FocusOut> 발생 시 포커스가 nav 화살표(= _top_cal 내부)로
+          이동했는데 DateEntry 자신이 아니라고 판단해 calendar를 강제 닫음.
+    수정: _on_focus_out_cal 오버라이드 → 새 포커스가 _top_cal 내부면 닫지 않음.
+    """
+
+    def _on_focus_out_cal(self, event) -> None:
+        try:
+            fw = self.focus_get()
+            if fw is not None and fw is not self:
+                top = str(self._top_cal)
+                fw_path = str(fw)
+                if fw_path == top or fw_path.startswith(top + "."):
+                    return  # 달력 내부 위젯 (nav 화살표 등) — 닫지 않음
+        except Exception:
+            pass
+        super()._on_focus_out_cal(event)
 
 
 # ── 메인 윈도우 ───────────────────────────────────────────────────────
@@ -65,7 +110,7 @@ class App(tk.Tk):
 
         ttk.Label(frm_basic, text="체크인").grid(row=1, column=0, sticky="w", **pad)
         ci_default = date.today() + timedelta(days=7)
-        self.ent_checkin = DateEntry(
+        self.ent_checkin = _FixedDateEntry(
             frm_basic, date_pattern="yyyy-mm-dd", width=13,
             year=ci_default.year, month=ci_default.month, day=ci_default.day,
             showweeknumbers=False, firstweekday="sunday",
@@ -73,7 +118,7 @@ class App(tk.Tk):
         self.ent_checkin.grid(row=1, column=1, sticky="w", **pad)
         ttk.Label(frm_basic, text="체크아웃").grid(row=1, column=2, sticky="w", padx=(16,4))
         co_default = date.today() + timedelta(days=8)
-        self.ent_checkout = DateEntry(
+        self.ent_checkout = _FixedDateEntry(
             frm_basic, date_pattern="yyyy-mm-dd", width=13,
             year=co_default.year, month=co_default.month, day=co_default.day,
             showweeknumbers=False, firstweekday="sunday",
@@ -214,6 +259,18 @@ class App(tk.Tk):
         ttk.Button(frm_btn, text="🗑  로그 지우기",
                    command=self._clear_log, width=14).pack(side="left", padx=6)
 
+        # ── 진행 상태 바 ──
+        frm_prog = ttk.Frame(self)
+        frm_prog.pack(fill="x", padx=12, pady=(0, 6))
+
+        self.lbl_step = ttk.Label(frm_prog, text="", foreground="#555555",
+                                  width=26, anchor="w")
+        self.lbl_step.pack(side="left")
+        self.prog_bar = ttk.Progressbar(frm_prog, mode="determinate", maximum=100)
+        self.prog_bar.pack(side="left", fill="x", expand=True, padx=(6, 6))
+        self.lbl_pct = ttk.Label(frm_prog, text="", width=5, anchor="e")
+        self.lbl_pct.pack(side="left")
+
         # ── 로그 창 ──
         frm_log = ttk.LabelFrame(self, text="실행 로그")
         frm_log.pack(fill="both", expand=True, padx=12, pady=(0, 10))
@@ -252,9 +309,9 @@ class App(tk.Tk):
             "소요 시간": "숙소당 약 2초 × 최대 80개  ≈  3~5분",
         },
         "M": {
-            "수집 방식": "체크인이 속한 주의  평일(월→화) · 주말(금→토)  2개 날짜창 자동 수집 →  통계 분석",
-            "입     력": "지역명  /  체크인(해당 주 기준 자동 분리)  /  아래 M 모드 옵션 전체",
-            "출     력": "output/market/   손님용.xlsx  +  내부용.xlsx  +  .html",
+            "수집 방식": "체크인 날짜가 속한 주의 평일(월→화) · 주말(금→토) 2개 날짜창을 자동 계산해 수집 → 통계 분석",
+            "입     력": "지역명  /  체크인(기준 날짜 — 체크아웃은 무시됨)  /  아래 M 모드 옵션 전체",
+            "출     력": "output/{날짜}_{지역}/   손님용.xlsx  +  내부용.xlsx  +  .html",
             "소요 시간": "약 10~20분",
         },
     }
@@ -275,17 +332,23 @@ class App(tk.Tk):
         try:
             while True:
                 item = self._log_q.get_nowait()
-                if isinstance(item, tuple):
+                if isinstance(item, tuple) and item[0] == "PROGRESS":
+                    _, n, total, desc = item
+                    pct = int(n / total * 100)
+                    self.prog_bar["value"] = pct
+                    self.lbl_step.configure(text=f"[{n}/{total}] {desc}")
+                    self.lbl_pct.configure(text=f"{pct}%")
+                elif isinstance(item, tuple):
                     text, tag = item
-                else:
-                    text, tag = item, None
-                self.log_text.configure(state="normal")
-                if tag:
+                    self.log_text.configure(state="normal")
                     self.log_text.insert("end", text, tag)
+                    self.log_text.see("end")
+                    self.log_text.configure(state="disabled")
                 else:
-                    self.log_text.insert("end", text)
-                self.log_text.see("end")
-                self.log_text.configure(state="disabled")
+                    self.log_text.configure(state="normal")
+                    self.log_text.insert("end", item)
+                    self.log_text.see("end")
+                    self.log_text.configure(state="disabled")
         except queue.Empty:
             pass
         self.after(80, self._poll_log)
@@ -359,6 +422,9 @@ class App(tk.Tk):
         self.btn_run.configure(state="disabled", text="⏳ 실행 중...")
         self.btn_open.configure(state="disabled")
         self._clear_log()
+        self.prog_bar["value"] = 0
+        self.lbl_step.configure(text="준비 중...")
+        self.lbl_pct.configure(text="")
 
         threading.Thread(target=self._worker, args=(inputs,), daemon=True).start()
 
@@ -421,33 +487,44 @@ class App(tk.Tk):
                 _m.run(region, **kwargs)
 
             # ── 완료 후 파일 요약 ────────────────────────────────────
-            today_str = date.today().strftime("%Y%m%d")
-            out_dir   = PROJECT_DIR / "output" / f"{today_str}_{region}"
+            folder_ts = datetime.now().strftime("%y%m%d_%H%M")
+            out_dir   = PROJECT_DIR / "output" / f"{folder_ts}_{region}"
             self._last_out_dir = out_dir
 
             self._log("")
             self._log("═" * 56, "hdr")
             self._log("  생성된 파일 목록", "hdr")
             self._log("═" * 56, "hdr")
-            self._log(f"  📁 output/{today_str}_{region}/", "dir")
+            self._log(f"  📁 output/{folder_ts}_{region}/", "dir")
             self._log("─" * 56, "hdr")
 
             if out_dir.exists():
-                files = sorted(out_dir.iterdir())
+                # 방금 생성된 파일만 (이번 실행 기준 최근 30초)
+                import time as _time
+                now = _time.time()
+                recent = [f for f in sorted(out_dir.iterdir())
+                          if f.is_file() and now - f.stat().st_mtime < 30]
+                files = recent if recent else sorted(
+                    [f for f in out_dir.iterdir() if f.is_file()])
                 if files:
                     for f in files:
                         size_kb = f.stat().st_size / 1024
                         icon = "🌐" if f.suffix == ".html" else "📊"
-                        self._log(f"  {icon} {f.name:<44}  {size_kb:>6.0f} KB", "file")
+                        self._log(f"  {icon} {f.name:<46}  {size_kb:>6.0f} KB", "file")
                 else:
                     self._log("  (생성된 파일 없음)", "err")
             else:
-                self._log("  (출력 폴더가 없습니다 — 수집 결과 0개일 수 있음)", "err")
+                self._log("  (출력 폴더 없음 — 수집 결과 0개일 수 있음)", "err")
 
             self._log("═" * 56, "hdr")
             self._log("")
             self._log("✅ 완료", "ok")
+            self.after(0, lambda: self.prog_bar.configure(value=100))
+            self.after(0, lambda: self.lbl_step.configure(text="완료"))
+            self.after(0, lambda: self.lbl_pct.configure(text="100%"))
             self.after(0, lambda: self.btn_open.configure(state="normal"))
+            if out_dir.exists():
+                self.after(600, lambda d=out_dir: os.startfile(str(d)))
 
         except Exception as exc:
             import traceback

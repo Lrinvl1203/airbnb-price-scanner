@@ -10,7 +10,7 @@ import json
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import xlsxwriter
@@ -342,10 +342,13 @@ def run(query: str, checkin: str, checkout: str) -> None:
         if i < len(listings):
             time.sleep(2.0)
 
-    today_str = date.today().strftime("%Y%m%d")
-    out_dir  = Path(__file__).parent / "output" / f"{today_str}_{query}"
+    ci_tag    = checkin.replace("-", "")[2:]
+    co_tag    = checkout.replace("-", "")[2:]
+    hhmm      = datetime.now().strftime("%H%M")
+    folder_ts = datetime.now().strftime("%y%m%d_%H%M")
+    out_dir   = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{query}_상세_{checkin}~{checkout}.xlsx"
+    out_path  = out_dir / f"{query}_상세_{ci_tag}-{co_tag}_{hhmm}.xlsx"
     print(f"[4/4] Excel 생성: {out_path.name}")
     build_excel_detail(listings, query, checkin, checkout, out_path)
 

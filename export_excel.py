@@ -5,7 +5,7 @@ Airbnb 검색 결과 → Excel 추출 스크립트
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import re
@@ -333,10 +333,13 @@ def run(query: str, checkin: str, checkout: str) -> None:
         return
 
     nights   = (date.fromisoformat(checkout) - date.fromisoformat(checkin)).days
-    today_str = date.today().strftime("%Y%m%d")
-    out_dir  = Path(__file__).parent / "output" / f"{today_str}_{query}"
+    ci_tag    = checkin.replace("-", "")[2:]    # 2026-06-22 → 260622
+    co_tag    = checkout.replace("-", "")[2:]
+    hhmm      = datetime.now().strftime("%H%M")
+    folder_ts = datetime.now().strftime("%y%m%d_%H%M")
+    out_dir   = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{query}_기본_{checkin}~{checkout}.xlsx"
+    out_path  = out_dir / f"{query}_기본_{ci_tag}-{co_tag}_{hhmm}.xlsx"
 
     print(f"[3/3] Excel 생성: {out_path.name}")
     build_excel(listings, query, checkin, checkout, out_path)

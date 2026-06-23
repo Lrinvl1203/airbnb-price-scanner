@@ -1463,7 +1463,7 @@ def _build_dashboard_sheet(wb, f, listings, stats, premium, windows):
     ws.merge_range(row, 0, row, 3, "내부 분석 대시보드", f["banner"])
     ws.set_row(row, 40); row += 1
 
-    ws.merge_range(row, 0, row, 3, f"수집 창: {windows[0][0]}(평일) / {windows[1][0]}(주말)  |  생성: {date.today()}", f["subtitle"])
+    ws.merge_range(row, 0, row, 3, f"수집 창: {windows[0][0]}~{windows[0][1]}(평일) / {windows[1][0]}~{windows[1][1]}(주말)  |  생성: {date.today()}", f["subtitle"])
     ws.set_row(row, 24); row += 2
 
     # ── 전체 KPI ──
@@ -2199,8 +2199,8 @@ def build_html_report(
     if baths is not None: cond_parts.append(f"{int(baths) if baths == int(baths) else baths}욕실")
     cond_str = " ".join(cond_parts) if cond_parts else "전체"
 
-    wd_label = f"{windows[0][0]}(평일)"
-    we_label = f"{windows[1][0]}(주말)"
+    wd_label = f"{windows[0][0]}~{windows[0][1]}(평일)"
+    we_label = f"{windows[1][0]}~{windows[1][1]}(주말)"
 
     # 가격 구간 분포 (빈 구간 제외)
     dist = price_distribution(listings)
@@ -2517,11 +2517,12 @@ def run(
     print(f"      시장 매력도: {market_score['total']}점 / 100점 ({market_score['judgment']})")
     print(f"      기준 시나리오 월 영업이익: ₩{scenarios[1]['op_profit']:,}")
 
-    wd_tag  = windows[0][0].replace("-", "")[2:]   # 평일 체크인 yymmdd
-    we_tag  = windows[1][0].replace("-", "")[2:]   # 주말 체크인 yymmdd
-    hhmm    = datetime.now().strftime("%H%M")
-    ftag    = f"{wd_tag}-{we_tag}_{hhmm}"          # 예: 260623-260627_1430
-    base    = Path(__file__).parent / "output" / "market"
+    wd_tag    = windows[0][0].replace("-", "")[2:]   # 평일 체크인 yymmdd
+    we_tag    = windows[1][0].replace("-", "")[2:]   # 주말 체크인 yymmdd
+    hhmm      = datetime.now().strftime("%H%M")
+    ftag      = f"{wd_tag}-{we_tag}_{hhmm}"          # 예: 260623-260627_1430
+    folder_ts = datetime.now().strftime("%y%m%d_%H%M")
+    base      = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
     base.mkdir(parents=True, exist_ok=True)
     print("\n[5/5] 리포트 생성 (손님용 + 내부용 + HTML)")
 
@@ -2548,7 +2549,7 @@ def run(
                           demand=demand, eff_adr=eff_adr)
 
     print(f"\n{'='*60}")
-    print(f" 완료!  →  output/market/")
+    print(f" 완료!  →  output/{folder_ts}_{query}/")
     if output_mode in ("both", "client"):
         print(f"  📊 {query}_시장분석_손님용_{ftag}.xlsx")
     if output_mode in ("both", "internal"):
