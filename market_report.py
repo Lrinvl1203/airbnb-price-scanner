@@ -75,23 +75,26 @@ _COMMERCIAL_DESC_KW = [
 # ══════════════════════════════════════════════════════════════════
 
 def get_date_windows(target: date | None = None) -> list[tuple[str, str, str]]:
-    """지정 날짜 기반 평일·주말 각 1박 창 반환.
+    """지정 날짜 기반 평일·금→토·토→일 3개 1박 창 반환.
 
     지정 날짜가 금~일(주말)이면 → 해당 날짜를 주말 창 체크인으로 사용.
     지정 날짜가 월~목(평일)이면 → 해당 날짜를 평일 창 체크인으로 사용.
     반대쪽 창은 같은 주의 월요일 / 금요일로 채움.
     target 미지정 시 오늘 기준 3주 후 기준."""
-    base   = target if target else (date.today() + timedelta(weeks=3))
-    monday = base - timedelta(days=base.weekday())   # 해당 주 월요일
-    friday = monday + timedelta(days=4)               # 해당 주 금요일
+    base     = target if target else (date.today() + timedelta(weeks=3))
+    monday   = base - timedelta(days=base.weekday())   # 해당 주 월요일
+    friday   = monday + timedelta(days=4)               # 해당 주 금요일
+    saturday = friday + timedelta(days=1)               # 해당 주 토요일
 
     wd = base.weekday()   # 0=월 … 4=금 5=토 6=일
-    weekday_in = base   if wd <= 3 else monday   # 월~목: 지정일 그대로 / 금~일: 해당 주 월
-    weekend_in = base   if wd >= 4 else friday   # 금~일: 지정일 그대로 / 월~목: 해당 주 금
+    weekday_in  = base   if wd <= 3 else monday    # 월~목: 지정일 그대로 / 금~일: 해당 주 월
+    fri_sat_in  = base   if wd == 4 else friday    # 금: 지정일 그대로 / 나머지: 해당 주 금
+    sat_sun_in  = base   if wd == 5 else saturday  # 토: 지정일 그대로 / 나머지: 해당 주 토
 
     return [
-        (weekday_in.isoformat(), (weekday_in + timedelta(days=1)).isoformat(), "평일"),
-        (weekend_in.isoformat(), (weekend_in + timedelta(days=1)).isoformat(), "주말"),
+        (weekday_in.isoformat(), (weekday_in  + timedelta(days=1)).isoformat(), "평일"),
+        (fri_sat_in.isoformat(), (fri_sat_in  + timedelta(days=1)).isoformat(), "주말(금→토)"),
+        (sat_sun_in.isoformat(), (sat_sun_in  + timedelta(days=1)).isoformat(), "주말(토→일)"),
     ]
 
 
@@ -157,7 +160,7 @@ def collect_data(
     baths: float | None,
     target_date: date | None = None,
 ) -> dict:
-    """두 날짜창 수집 → 머지 → 필터 → 분류 결과 반환."""
+    """3개 날짜창 수집 → 머지 → 필터 → 분류 결과 반환."""
     windows = get_date_windows(target_date)
     session = cf_requests.Session()
     session.headers.update({
@@ -170,22 +173,30 @@ def collect_data(
 
     wd_in, wd_out, wd_label = windows[0]
     we_in, we_out, we_label = windows[1]
+    ws_in, ws_out, ws_label = windows[2]
 
     wd_raw = _fetch_window(query, wd_in, wd_out, wd_label, geo, session)
     we_raw = _fetch_window(query, we_in, we_out, we_label, geo, session)
+    ws_raw = _fetch_window(query, ws_in, ws_out, ws_label, geo, session)
 
     # ── 머지 ─────────────────────────────────────────────────────
     wd_by_url = {l["url"]: l for l in wd_raw}
     we_by_url = {l["url"]: l for l in we_raw}
-    all_urls  = set(wd_by_url) | set(we_by_url)
+    ws_by_url = {l["url"]: l for l in ws_raw}
+    all_urls  = set(wd_by_url) | set(we_by_url) | set(ws_by_url)
 
     merged: list[dict] = []
     for url in all_urls:
         wd = wd_by_url.get(url)
         we = we_by_url.get(url)
-        base = (wd or we).copy()
+        ws = ws_by_url.get(url)
+        base = (wd or we or ws).copy()
         base["price_weekday"] = wd["price_per_night"] if wd else None
-        base["price_weekend"] = we["price_per_night"] if we else None
+        base["price_fri_sat"] = we["price_per_night"] if we else None
+        base["price_sat_sun"] = ws["price_per_night"] if ws else None
+        # price_weekend = 금→토·토→일 평균 (있는 것만)
+        we_prices = [p for p in [base["price_fri_sat"], base["price_sat_sun"]] if p]
+        base["price_weekend"] = round(statistics.mean(we_prices)) if we_prices else None
         base["price_per_night"] = base["price_weekday"] or base["price_weekend"]
         merged.append(base)
 
@@ -200,12 +211,13 @@ def collect_data(
         lst["host_type"] = classify_host_type(lst)
 
     return {
-        "listings": merged,
-        "windows":  windows,
-        "wd_count": len(wd_raw),
-        "we_count": len(we_raw),
-        "common_count": len(set(wd_by_url) & set(we_by_url)),
-        "geo": geo,
+        "listings":     merged,
+        "windows":      windows,
+        "wd_count":     len(wd_raw),
+        "we_count":     len(we_raw),
+        "ws_count":     len(ws_raw),
+        "common_count": len(set(wd_by_url) & set(we_by_url) & set(ws_by_url)),
+        "geo":          geo,
     }
 
 
@@ -676,7 +688,7 @@ def _build_cover_sheet(wb, f, listings, query, beds, baths, windows, stats, prem
         cond_txt += f" | 침실 {beds}개"
     if baths is not None:
         cond_txt += f" | 욕실 {baths}개"
-    subtitle = f"지역: {query}  |  분석일: {date.today()}{cond_txt}  |  수집 기간: {windows[0][0]} ~ {windows[1][1]}"
+    subtitle = f"지역: {query}  |  분석일: {date.today()}{cond_txt}  |  수집 기간: {windows[0][0]} ~ {windows[2][1]}"
     ws.merge_range(1, 0, 1, 9, subtitle, f["subtitle"])
     ws.set_row(1, 30)
     ws.set_row(2, 12)  # spacer
@@ -1463,7 +1475,7 @@ def _build_dashboard_sheet(wb, f, listings, stats, premium, windows):
     ws.merge_range(row, 0, row, 3, "내부 분석 대시보드", f["banner"])
     ws.set_row(row, 40); row += 1
 
-    ws.merge_range(row, 0, row, 3, f"수집 창: {windows[0][0]}~{windows[0][1]}(평일) / {windows[1][0]}~{windows[1][1]}(주말)  |  생성: {date.today()}", f["subtitle"])
+    ws.merge_range(row, 0, row, 3, f"수집 창: {windows[0][0]}~{windows[0][1]}(평일) / {windows[1][0]}~{windows[1][1]}(금→토) / {windows[2][0]}~{windows[2][1]}(토→일)  |  생성: {date.today()}", f["subtitle"])
     ws.set_row(row, 24); row += 2
 
     # ── 전체 KPI ──
@@ -1559,7 +1571,9 @@ def _build_rawdata_sheet(wb, f, listings, stats):
         ("욕실",          "bathrooms",       7),
         ("평점",          "rating",          8),
         ("평일가",        "price_weekday",   14),
-        ("주말가",        "price_weekend",   14),
+        ("금→토가",      "price_fri_sat",   14),
+        ("토→일가",      "price_sat_sun",   14),
+        ("주말평균가",    "price_weekend",   14),
         ("1박가",         "price_per_night", 14),
         ("최대인원",      "max_guests",      8),
         ("침대종류",      "bed_types",       22),
@@ -1808,11 +1822,13 @@ def _build_meta_sheet(wb, f, query, beds, baths, geo, collected):
         ("지오코딩 위도",   str(geo.get("lat", "")),                          False),
         ("지오코딩 경도",   str(geo.get("lon", "")),                          False),
         ("",               "",                                                 False),
-        ("평일 수집 날짜",  f"{collected['windows'][0][0]} ~ {collected['windows'][0][1]}", True),
-        ("평일 수집 수",    f"{collected['wd_count']}개",                     False),
-        ("주말 수집 날짜",  f"{collected['windows'][1][0]} ~ {collected['windows'][1][1]}", True),
-        ("주말 수집 수",    f"{collected['we_count']}개",                     False),
-        ("공통 숙소 수",    f"{collected['common_count']}개 (주말 프리미엄 계산 기준)", True),
+        ("평일 수집 날짜",    f"{collected['windows'][0][0]} ~ {collected['windows'][0][1]}", True),
+        ("평일 수집 수",      f"{collected['wd_count']}개",                                   False),
+        ("금→토 수집 날짜",   f"{collected['windows'][1][0]} ~ {collected['windows'][1][1]}", True),
+        ("금→토 수집 수",     f"{collected['we_count']}개",                                   False),
+        ("토→일 수집 날짜",   f"{collected['windows'][2][0]} ~ {collected['windows'][2][1]}", True),
+        ("토→일 수집 수",     f"{collected['ws_count']}개",                                   False),
+        ("공통 숙소 수",      f"{collected['common_count']}개 (3창 모두 수집된 숙소)",         True),
         ("최종 분석 수",    f"{len(collected['listings'])}개",                True),
         ("",               "",                                                 False),
         ("분류 로직",       "상업용 스코어링 v1.0 (property_type+host_name+소개글)", False),
@@ -2200,7 +2216,8 @@ def build_html_report(
     cond_str = " ".join(cond_parts) if cond_parts else "전체"
 
     wd_label = f"{windows[0][0]}~{windows[0][1]}(평일)"
-    we_label = f"{windows[1][0]}~{windows[1][1]}(주말)"
+    we_label = f"{windows[1][0]}~{windows[1][1]}(금→토)"
+    ws_label = f"{windows[2][0]}~{windows[2][1]}(토→일)"
 
     # 가격 구간 분포 (빈 구간 제외)
     dist = price_distribution(listings)
@@ -2294,7 +2311,7 @@ def build_html_report(
         '<div class="container">\n'
         '<div class="hero-tag">에어비앤비 시장 분석 리포트</div>\n'
         f'<h1 class="hero-title">{query} <span class="hero-cond">{cond_str} 시장</span></h1>\n'
-        f'<p class="hero-meta">분석일 {today} &nbsp;·&nbsp; 수집창 {wd_label} / {we_label} &nbsp;·&nbsp; 총 {total_cnt}개 숙소</p>\n'
+        f'<p class="hero-meta">분석일 {today} &nbsp;·&nbsp; 수집창 {wd_label} / {we_label} / {ws_label} &nbsp;·&nbsp; 총 {total_cnt}개 숙소</p>\n'
         '</div>\n'
         '</header>\n'
 
@@ -2425,7 +2442,7 @@ def build_html_report(
         f'<strong>데이터 출처:</strong> Airbnb.com (비공식 크롤링, 개인 분석 목적) &nbsp;·&nbsp; '
         f'<strong>생성:</strong> {today} &nbsp;·&nbsp; '
         f'<strong>지역:</strong> {query} &nbsp;·&nbsp; '
-        f'<strong>수집창:</strong> {wd_label} / {we_label}<br>'
+        f'<strong>수집창:</strong> {wd_label} / {we_label} / {ws_label}<br>'
         f'본 리포트는 수집 시점 기준이며, 시장 상황 변동에 따라 달라질 수 있습니다.'
         '\n</div>\n</footer>\n'
 
@@ -2475,7 +2492,7 @@ def run(
     geo = geocode_region(query)
     print(f"      → lat={geo.get('lat')}, lon={geo.get('lon')}")
 
-    print("\n[2/5] 데이터 수집 (2개 날짜창 × B 모드)")
+    print("\n[2/5] 데이터 수집 (3개 날짜창 × B 모드: 평일·금→토·토→일)")
     collected = collect_data(query, geo, beds, baths, target_date)
     listings  = collected["listings"]
 
@@ -2518,9 +2535,10 @@ def run(
     print(f"      기준 시나리오 월 영업이익: ₩{scenarios[1]['op_profit']:,}")
 
     wd_tag    = windows[0][0].replace("-", "")[2:]   # 평일 체크인 yymmdd
-    we_tag    = windows[1][0].replace("-", "")[2:]   # 주말 체크인 yymmdd
+    we_tag    = windows[1][0].replace("-", "")[2:]   # 금→토 체크인 yymmdd
+    ws_tag    = windows[2][0].replace("-", "")[2:]   # 토→일 체크인 yymmdd
     hhmm      = datetime.now().strftime("%H%M")
-    ftag      = f"{wd_tag}-{we_tag}_{hhmm}"          # 예: 260623-260627_1430
+    ftag      = f"{wd_tag}-{we_tag}-{ws_tag}_{hhmm}" # 예: 260623-260626-260627_1430
     folder_ts = datetime.now().strftime("%y%m%d_%H%M")
     base      = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
     base.mkdir(parents=True, exist_ok=True)
