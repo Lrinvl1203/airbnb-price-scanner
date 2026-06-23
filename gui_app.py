@@ -94,6 +94,12 @@ class App(tk.Tk):
         self._build_ui()
         self._poll_log()
 
+        # 초기 창 크기 + 화면 중앙 배치
+        self.update_idletasks()
+        w, h = 960, 860
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
     # ── UI 구성 ────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
         pad = {"padx": 10, "pady": 4}
@@ -124,8 +130,6 @@ class App(tk.Tk):
             showweeknumbers=False, firstweekday="sunday",
         )
         self.ent_checkout.grid(row=1, column=3, sticky="w", **pad)
-        ttk.Label(frm_basic, text="  ← 달력 아이콘 클릭 또는 ▲▼키").grid(
-            row=1, column=4, sticky="w", padx=2)
 
         # 모드
         ttk.Label(frm_basic, text="모드").grid(row=2, column=0, sticky="nw", **pad)
@@ -230,34 +234,34 @@ class App(tk.Tk):
         self.frm_adv = ttk.LabelFrame(self, text="수집 매물 수")
         self.frm_adv.pack(fill="x", padx=12, pady=4)
 
-        ttk.Label(self.frm_adv, text="최대 매물", font=("", 10, "bold")).grid(
-            row=0, column=0, sticky="w", **pad)
+        ttk.Label(self.frm_adv, text="최대 매물").grid(row=0, column=0, sticky="w", **pad)
         self.var_max = tk.StringVar(value="200")
         ttk.Spinbox(self.frm_adv, from_=10, to=9999, increment=10,
-                    textvariable=self.var_max, width=7).grid(
-            row=0, column=1, sticky="w", **pad)
+                    textvariable=self.var_max, width=7).grid(row=0, column=1, sticky="w", padx=4)
+        ttk.Label(self.frm_adv, text="개").grid(row=0, column=2, sticky="w")
 
-        ttk.Label(self.frm_adv, text="개     최대 페이지").grid(
-            row=0, column=2, sticky="w")
+        ttk.Label(self.frm_adv, text="최대 페이지").grid(row=0, column=3, sticky="w", padx=(20, 4))
         self.var_pages = tk.StringVar(value="20")
         ttk.Spinbox(self.frm_adv, from_=1, to=50, increment=1,
-                    textvariable=self.var_pages, width=5).grid(
-            row=0, column=3, sticky="w", **pad)
-        ttk.Label(self.frm_adv,
-                  text="페이지   (페이지당 ~20개 · Airbnb 실제 한계 ~200개)").grid(
-            row=0, column=4, sticky="w", padx=4)
+                    textvariable=self.var_pages, width=5).grid(row=0, column=4, sticky="w", padx=4)
+        ttk.Label(self.frm_adv, text="페이지   (페이지당 ~20개 · Airbnb 한계 ~200개)",
+                  foreground="#666666").grid(row=0, column=5, sticky="w", padx=(4, 10))
 
-        # ── 버튼 ──
-        frm_btn = ttk.Frame(self)
-        frm_btn.pack(pady=8)
-        self.btn_run = ttk.Button(frm_btn, text="▶  실행",
-                                  command=self._run, width=14)
-        self.btn_run.pack(side="left", padx=6)
-        self.btn_open = ttk.Button(frm_btn, text="📂  결과 폴더 열기",
-                                   command=self._open_output, width=18, state="disabled")
-        self.btn_open.pack(side="left", padx=6)
-        ttk.Button(frm_btn, text="🗑  로그 지우기",
-                   command=self._clear_log, width=14).pack(side="left", padx=6)
+        # ── 버튼 + 진행 바 통합 영역 ──
+        frm_action = ttk.Frame(self)
+        frm_action.pack(fill="x", padx=12, pady=(8, 4))
+
+        # 실행 버튼 (왼쪽, 주요 액션)
+        self.btn_run = ttk.Button(frm_action, text="▶  실행",
+                                  command=self._run, width=16)
+        self.btn_run.pack(side="left")
+
+        # 우측 유틸 버튼
+        ttk.Button(frm_action, text="🗑  로그 지우기",
+                   command=self._clear_log, width=16).pack(side="right")
+        self.btn_open = ttk.Button(frm_action, text="📂  결과 폴더 열기",
+                                   command=self._open_output, width=20, state="disabled")
+        self.btn_open.pack(side="right", padx=(0, 8))
 
         # ── 진행 상태 바 ──
         frm_prog = ttk.Frame(self)
