@@ -16,7 +16,11 @@ from pathlib import Path
 import xlsxwriter
 from curl_cffi import requests as cf_requests
 
-sys.path.insert(0, str(Path(__file__).parent))
+_BASE_DIR = (
+    Path(sys.executable).parent if getattr(sys, "frozen", False)
+    else Path(__file__).parent
+)
+sys.path.insert(0, str(_BASE_DIR))
 from airbnb_fetch import crawl_airbnb, geocode_region
 from export_excel import _fix_colors, C_DARK_BLUE, C_MID_BLUE, C_LIGHT_BLUE, C_LINK, C_WHITE, COLS
 
@@ -346,7 +350,7 @@ def run(query: str, checkin: str, checkout: str) -> None:
     co_tag    = checkout.replace("-", "")[2:]
     hhmm      = datetime.now().strftime("%H%M")
     folder_ts = datetime.now().strftime("%y%m%d_%H%M")
-    out_dir   = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
+    out_dir   = _BASE_DIR / "output" / f"{folder_ts}_{query}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path  = out_dir / f"{query}_상세_{ci_tag}-{co_tag}_{hhmm}.xlsx"
     print(f"[4/4] Excel 생성: {out_path.name}")

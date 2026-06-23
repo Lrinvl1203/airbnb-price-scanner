@@ -19,7 +19,11 @@ from pathlib import Path
 
 import xlsxwriter
 
-sys.path.insert(0, str(Path(__file__).parent))
+_BASE_DIR = (
+    Path(sys.executable).parent if getattr(sys, "frozen", False)
+    else Path(__file__).parent
+)
+sys.path.insert(0, str(_BASE_DIR))
 from airbnb_fetch import crawl_airbnb, geocode_region
 from export_excel import _fix_colors, C_DARK_BLUE, C_MID_BLUE, C_LIGHT_BLUE, C_WHITE, C_LINK
 from export_excel_detail import fetch_detail, DETAIL_COLS
@@ -2540,7 +2544,7 @@ def run(
     hhmm      = datetime.now().strftime("%H%M")
     ftag      = f"{wd_tag}-{we_tag}-{ws_tag}_{hhmm}" # 예: 260623-260626-260627_1430
     folder_ts = datetime.now().strftime("%y%m%d_%H%M")
-    base      = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
+    base      = _BASE_DIR / "output" / f"{folder_ts}_{query}"
     base.mkdir(parents=True, exist_ok=True)
     print("\n[5/5] 리포트 생성 (손님용 + 내부용 + HTML)")
 

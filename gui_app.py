@@ -22,7 +22,10 @@ from ttkbootstrap.widgets import Floodgauge
 
 from tkcalendar import DateEntry
 
-PROJECT_DIR = Path(__file__).parent
+PROJECT_DIR = (
+    Path(sys.executable).parent if getattr(sys, "frozen", False)
+    else Path(__file__).parent
+)
 
 # ── 로그 필터 ──────────────────────────────────────────────────────────
 _STEP_RE    = re.compile(r'\[(\d+)/(\d+)\]\s*(.*)')

@@ -15,7 +15,11 @@ import zipfile
 
 import xlsxwriter
 
-sys.path.insert(0, str(Path(__file__).parent))
+_BASE_DIR = (
+    Path(sys.executable).parent if getattr(sys, "frozen", False)
+    else Path(__file__).parent
+)
+sys.path.insert(0, str(_BASE_DIR))
 from airbnb_fetch import crawl_airbnb, geocode_region
 
 # 이모지·특수기호 제거 (Airbnb 숙소명에 포함될 수 있음)
@@ -337,7 +341,7 @@ def run(query: str, checkin: str, checkout: str) -> None:
     co_tag    = checkout.replace("-", "")[2:]
     hhmm      = datetime.now().strftime("%H%M")
     folder_ts = datetime.now().strftime("%y%m%d_%H%M")
-    out_dir   = Path(__file__).parent / "output" / f"{folder_ts}_{query}"
+    out_dir   = _BASE_DIR / "output" / f"{folder_ts}_{query}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path  = out_dir / f"{query}_기본_{ci_tag}-{co_tag}_{hhmm}.xlsx"
 
