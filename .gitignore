@@ -65,3 +65,6 @@ map_*.png
 service_screenshot.png
 app_icon.png
 airbnb_price_analyzer.zip
+
+# PyInstaller 빌드 산출물
+에어비앤비_시장분석_포터블.zip
