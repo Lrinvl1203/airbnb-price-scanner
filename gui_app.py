@@ -12,6 +12,7 @@ import re
 import sys
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import messagebox
@@ -84,14 +85,24 @@ class _FixedDateEntry(DateEntry):
 # ── 메인 윈도우 ───────────────────────────────────────────────────────
 class App(ttk.Window):
     # ── 테마 상수 ──────────────────────────────────────────────────────
-    _LOG_BG   = "#1a1a2e"
-    _LOG_FG   = "#e0e0e0"
-    _INFO_BG  = "#2a2d3e"
-    _INFO_FG  = "#a0a8c0"
-    _INFO_BAR = "#375a7f"   # darkly primary
+    _FONT_FAMILY = "맑은 고딕"
+    _FONT_SIZE   = 10
+    _FONT_SMALL  = 9
+    _FONT_XSMALL = 9
+
+    _LOG_BG      = "#141821"
+    _LOG_FG      = "#e6edf3"
+    _INFO_BG     = "#252b38"
+    _INFO_FG     = "#b4bdcf"
+    _INFO_KEY_FG = "#95a0b5"
+    _INFO_BAR    = "#3b465a"
+    _MUTED_FG    = "#8b94a8"
+    _DATE_BG     = "#f3f6fa"
+    _DATE_FG     = "#151922"
 
     def __init__(self) -> None:
         super().__init__(themename="darkly")
+        self._configure_fonts()
         self.title("Airbnb 시장 분석 도구")
         self.resizable(True, True)
         self.minsize(900, 720)
@@ -108,6 +119,39 @@ class App(ttk.Window):
         w, h = 980, 880
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
+    def _configure_fonts(self) -> None:
+        """Tk/ttk 기본 폰트를 한 단계 올려 가독성을 맞춘다."""
+        font_specs = {
+            "TkDefaultFont":      (self._FONT_SIZE, "normal"),
+            "TkTextFont":         (self._FONT_SIZE, "normal"),
+            "TkMenuFont":         (self._FONT_SIZE, "normal"),
+            "TkHeadingFont":      (self._FONT_SIZE + 1, "bold"),
+            "TkCaptionFont":      (self._FONT_SMALL, "normal"),
+            "TkSmallCaptionFont": (self._FONT_SMALL, "normal"),
+            "TkIconFont":         (self._FONT_SIZE, "normal"),
+        }
+        for name, (size, weight) in font_specs.items():
+            try:
+                tkfont.nametofont(name).configure(
+                    family=self._FONT_FAMILY,
+                    size=size,
+                    weight=weight,
+                )
+            except tk.TclError:
+                pass
+
+        style = ttk.Style()
+        base = (self._FONT_FAMILY, self._FONT_SIZE)
+        small = (self._FONT_FAMILY, self._FONT_SMALL)
+        style.configure("TLabel", font=base)
+        style.configure("TButton", font=base)
+        style.configure("TEntry", font=base)
+        style.configure("TSpinbox", font=base)
+        style.configure("TRadiobutton", font=base)
+        style.configure("TLabelframe.Label", font=(self._FONT_FAMILY, self._FONT_SIZE, "bold"))
+        style.configure("TCheckbutton", font=base)
+        style.configure("Toolbutton", font=small)
 
     # ── UI 구성 ────────────────────────────────────────────────────────
     def _build_ui(self) -> None:
@@ -127,7 +171,8 @@ class App(ttk.Window):
         ttk.Entry(frm_basic, textvariable=self.var_region, width=24).grid(
             row=0, column=1, sticky="w", pady=5)
         ttk.Label(frm_basic, text="예: 홍대, 해운대, 충신동",
-                  foreground="#666e82", font=("", 8)).grid(
+                  foreground=self._MUTED_FG,
+                  font=(self._FONT_FAMILY, self._FONT_XSMALL)).grid(
             row=0, column=2, sticky="w", padx=(10, 0), pady=5)
 
         # 날짜 — 체크인 ~ 체크아웃 한 줄
@@ -157,15 +202,16 @@ class App(ttk.Window):
         # DateEntry는 TCombobox 기반 'DateEntry' 스타일 사용 — 위젯 생성 후 덮어씀
         _s = ttk.Style()
         _s.configure("DateEntry",
-                      fieldbackground="white",
-                      foreground="black",
-                      insertcolor="black",
-                      arrowcolor="black",
-                      selectforeground="black",
-                      selectbackground="#0078d4")
+                      fieldbackground=self._DATE_BG,
+                      foreground=self._DATE_FG,
+                      insertcolor=self._DATE_FG,
+                      arrowcolor=self._DATE_FG,
+                      selectforeground="#ffffff",
+                      selectbackground="#2563eb",
+                      font=(self._FONT_FAMILY, self._FONT_SIZE))
         _s.map("DateEntry",
-               fieldbackground=[("readonly", "white"), ("disabled", "#e8e8e8")],
-               foreground=[("readonly", "black"), ("disabled", "#888888")],
+               fieldbackground=[("readonly", self._DATE_BG), ("disabled", "#d8dde6")],
+               foreground=[("readonly", self._DATE_FG), ("disabled", "#7c8493")],
                arrowcolor=[("disabled", "#888888")])
 
         # 모드 선택
@@ -196,16 +242,19 @@ class App(ttk.Window):
         self._info_lbls: dict[str, tk.Label] = {}
         for i, key in enumerate(_rows):
             tk.Label(self._frm_info, text=key, bg=self._INFO_BG,
-                     font=("", 9, "bold"), fg="#7a8aaa",
+                     font=(self._FONT_FAMILY, self._FONT_SMALL, "bold"),
+                     fg=self._INFO_KEY_FG,
                      anchor="e", width=9).grid(
                 row=i, column=0,
                 padx=(10, 4),
                 pady=(7 if i == 0 else 3, 7 if i == len(_rows)-1 else 3),
                 sticky="e")
             tk.Label(self._frm_info, text="│", bg=self._INFO_BG,
-                     fg="#3d4f6b", font=("", 9)).grid(row=i, column=1, sticky="ns")
+                     fg="#596579",
+                     font=(self._FONT_FAMILY, self._FONT_SMALL)).grid(row=i, column=1, sticky="ns")
             lbl = tk.Label(self._frm_info, text="", bg=self._INFO_BG,
-                           font=("", 9), fg=self._INFO_FG,
+                           font=(self._FONT_FAMILY, self._FONT_SMALL),
+                           fg=self._INFO_FG,
                            anchor="w", justify="left", wraplength=500)
             lbl.grid(row=i, column=2,
                      padx=(8, 12),
@@ -218,7 +267,7 @@ class App(ttk.Window):
         self.frm_m.grid(row=1, column=0, sticky="ew", padx=14, pady=4)
         self.frm_m.grid_remove()   # 초기 숨김 — grid_remove는 공간 예약 없음
 
-        _DG = "#666e82"
+        _DG = self._MUTED_FG
 
         def _spin_row(row, label, var, from_, to, inc, fmt="%.0f", desc=""):
             ttk.Label(self.frm_m, text=label, width=16, anchor="w").grid(
@@ -295,7 +344,8 @@ class App(ttk.Window):
                     textvariable=self.var_pages, width=5).pack(side="left", padx=(6, 4))
         ttk.Label(frm_adv, text="페이지").pack(side="left")
         ttk.Label(frm_adv, text="  (페이지당 ~20개 · Airbnb 한계 ~200개)",
-                  foreground="#666e82", font=("", 8)).pack(side="left")
+                  foreground=self._MUTED_FG,
+                  font=(self._FONT_FAMILY, self._FONT_XSMALL)).pack(side="left")
 
         # ── 3: 로그창 (weight=1 로 늘어남) ──────────────────────────
         frm_log = ttk.Frame(self)
@@ -323,14 +373,14 @@ class App(ttk.Window):
         self.prog_bar = Floodgauge(
             frm_prog,
             bootstyle="success",
-            font=("", 9),
+            font=(self._FONT_FAMILY, self._FONT_SMALL),
             mask="{}%",
             maximum=100,
             value=0,
         )
         self.prog_bar.grid(row=0, column=0, sticky="ew")
-        self.lbl_step = ttk.Label(frm_prog, text="", foreground="#666e82",
-                                  font=("", 8), anchor="w")
+        self.lbl_step = ttk.Label(frm_prog, text="", foreground=self._MUTED_FG,
+                                  font=(self._FONT_FAMILY, self._FONT_XSMALL), anchor="w")
         self.lbl_step.grid(row=1, column=0, sticky="ew")
 
         # 우측 유틸 버튼
@@ -363,15 +413,16 @@ class App(ttk.Window):
         self.log_text = tk.Text(
             frm_logbody, state="disabled", wrap="word",
             bg=self._LOG_BG, fg=self._LOG_FG,
-            font=("Consolas", 9),
+            font=("Consolas", 10),
             relief="flat", borderwidth=0,
-            selectbackground="#375a7f",
+            insertbackground=self._LOG_FG,
+            selectbackground="#2f5f98",
         )
-        self.log_text.tag_configure("hdr",  foreground="#00bc8c", font=("Consolas", 9, "bold"))
-        self.log_text.tag_configure("file", foreground="#3498db")
-        self.log_text.tag_configure("dir",  foreground="#f39c12")
-        self.log_text.tag_configure("err",  foreground="#e74c3c")
-        self.log_text.tag_configure("ok",   foreground="#00bc8c")
+        self.log_text.tag_configure("hdr",  foreground="#20d3a2", font=("Consolas", 10, "bold"))
+        self.log_text.tag_configure("file", foreground="#58a6ff")
+        self.log_text.tag_configure("dir",  foreground="#f2b84b")
+        self.log_text.tag_configure("err",  foreground="#ff6b6b")
+        self.log_text.tag_configure("ok",   foreground="#20d3a2")
 
         sb = ttk.Scrollbar(frm_logbody, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=sb.set)

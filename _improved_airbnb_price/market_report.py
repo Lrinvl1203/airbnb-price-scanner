@@ -108,28 +108,45 @@ def get_date_windows(target: date | None = None) -> list[tuple[str, str, str]]:
 # 2. 분류 로직
 # ══════════════════════════════════════════════════════════════════
 
-def classify_host_type(listing: dict) -> str:
-    """상업용(호텔·게스트하우스 등) vs 개인 분류. 스코어 2점 이상 = 상업용."""
+def classify_host_detail(listing: dict) -> tuple[str, int, str]:
+    """상업용(호텔·게스트하우스 등) vs 개인 분류와 근거를 반환."""
     score = 0
+    reasons: list[str] = []
 
     prop = (listing.get("property_type") or "").lower()
-    if any(k in prop for k in _COMMERCIAL_PROP_TYPES):
+    prop_hits = [k for k in _COMMERCIAL_PROP_TYPES if k in prop]
+    if prop_hits:
         score += 3
+        reasons.append(f"건물유형 +3({', '.join(prop_hits[:3])})")
 
     host = listing.get("host_name") or listing.get("title") or ""
-    if any(k in host for k in _COMMERCIAL_HOST_KW):
+    host_hits = [k for k in _COMMERCIAL_HOST_KW if k in host]
+    if host_hits:
         score += 2
+        reasons.append(f"호스트명/숙소명 +2({', '.join(host_hits[:3])})")
 
     desc = listing.get("description") or ""
-    hit  = sum(1 for k in _COMMERCIAL_DESC_KW if k in desc)
-    if hit >= 2:
+    desc_hits = [k for k in _COMMERCIAL_DESC_KW if k in desc]
+    if len(desc_hits) >= 2:
         score += 2
+        reasons.append(f"소개글 +2({', '.join(desc_hits[:3])})")
 
     title = listing.get("title") or ""
-    if any(k in title for k in ["호텔", "게스트하우스", "호스텔", "hotel"]):
+    title_hits = [k for k in ["호텔", "게스트하우스", "호스텔", "hotel"] if k in title]
+    if title_hits:
         score += 1
+        reasons.append(f"제목 +1({', '.join(title_hits[:3])})")
 
-    return "상업용" if score >= 2 else "개인"
+    host_type = "상업용" if score >= 2 else "개인"
+    reason = "; ".join(reasons) if reasons else "상업용 키워드 기준 점수 2점 미만"
+    return host_type, score, reason
+
+
+def classify_host_type(listing: dict) -> str:
+    """상업용(호텔·게스트하우스 등) vs 개인 분류. 스코어 2점 이상 = 상업용."""
+    host_type, _, _ = classify_host_detail(listing)
+    return host_type
+
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -225,7 +242,10 @@ def collect_data(
 
     # ── 분류 ─────────────────────────────────────────────────────
     for lst in merged:
-        lst["host_type"] = classify_host_type(lst)
+        host_type, class_score, class_reason = classify_host_detail(lst)
+        lst["host_type"] = host_type
+        lst["classification_score"] = class_score
+        lst["classification_reason"] = class_reason
 
     return {
         "listings":     merged,
@@ -1477,15 +1497,31 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
     # ── 섹션 1: 데이터 수집 ──────────────────────────────────────────
     r = _section(r, "📡  데이터 수집 방식")
     r = _item(r, "날짜창 자동 설정",
-              "입력한 체크인 날짜가 속한 주의 평일(월요일→화요일)과 주말(금요일→토요일) "
-              "1박 창 2개를 자동으로 수집합니다.")
+              "입력한 기준 날짜가 속한 주의 평일 1박, 금→토 1박, 토→일 1박 "
+              "총 3개 날짜창을 자동으로 수집합니다.")
     r = _item(r, "중복 URL 머지",
-              "두 날짜창에서 동일 숙소(URL 기준)를 하나로 합쳐 평일가·주말가를 각각 보존합니다.")
+              "세 날짜창에서 동일 숙소(URL 기준)를 하나로 합쳐 평일가·금→토가·토→일가를 각각 보존합니다.")
     r = _item(r, "상세 크롤링",
               "각 숙소 상세 페이지를 방문해 소개글·편의시설·호스트 정보를 추가로 수집합니다.")
     r += 1
 
-    # ── 섹션 2: 가격 용어 ──────────────────────────────────────────
+    # ── 섹션 2: 개인·상업용 분류 ──────────────────────────────────
+    r = _section(r, "개인·상업용 분류 기준")
+    r = _item(r, "분류 방식",
+              "숙소 유형, 호스트명/숙소명, 소개글, 제목에 상업형 숙소 단서가 있는지 보고 점수를 더합니다. "
+              "합산 점수 2점 이상이면 '상업용', 0~1점이면 '개인'으로 분류합니다.", True)
+    r = _item(r, "숙소/건물 유형 +3점",
+              "호텔, 게스트하우스, 호스텔, B&B, 부티크호텔 등으로 추정되면 3점을 더합니다.")
+    r = _item(r, "호스트명/숙소명 +2점",
+              "호텔, 게스트하우스, 호스텔, 스테이, 레지던스, 리조트, 펜션, 모텔, inn, stay, residence 등의 단어가 있으면 2점을 더합니다.")
+    r = _item(r, "소개글 +2점",
+              "프론트, 리셉션, 체크인 카운터, 24시간 운영, front desk, reception 같은 운영시설 단어가 2개 이상 있으면 2점을 더합니다.")
+    r = _item(r, "제목 +1점",
+              "제목에 호텔, 게스트하우스, 호스텔, hotel 같은 직접 단어가 있으면 1점을 더합니다.")
+    r = _note(r, "※ 이 구분은 사업자 등록 여부를 확인하는 법적 판정이 아니라, Airbnb 공개 문구 기반의 추정 분류입니다. 내부용 원본 데이터에는 각 숙소의 구분점수와 구분근거가 함께 표시됩니다.")
+    r += 1
+
+    # ── 섹션 3: 가격 용어 ──────────────────────────────────────────
     r = _section(r, "가격 용어")
     r = _item(r, "1박가 (ADR)",
               "Airbnb 검색 결과에 표시되는 1박 기준 숙박료. 청소비·서비스료 미포함.")
@@ -1498,7 +1534,7 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
               "주말 수요 탄력성 지표입니다.")
     r += 1
 
-    # ── 섹션 3: 통계 지표 ──────────────────────────────────────────
+    # ── 섹션 4: 통계 지표 ──────────────────────────────────────────
     r = _section(r, "통계 지표")
     r = _item(r, "이상치 제거 (IQR)",
               "Q3 + 1.5×IQR 초과 또는 Q1 − 1.5×IQR 미만인 가격을 이상치로 분류합니다. "
@@ -1514,7 +1550,7 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
               "가격 분포의 퍼짐 정도. 클수록 시장 가격이 다양하게 형성되어 있습니다.")
     r += 1
 
-    # ── 섹션 4: 추천 객단가 ────────────────────────────────────────
+    # ── 섹션 5: 추천 객단가 ────────────────────────────────────────
     r = _section(r, "추천 객단가 포지셔닝")
     r = _item(r, "가격 산정 방식",
               "먼저 시장 가격을 스타터/표준/프리미엄 3단계로 나눕니다. 그다음 수요 강도, 주말 가격 차이, 경쟁 숙소 평점, 비교 숙소 수, 청소비 부담을 보고 가격을 조금 올리거나 내립니다.", True)
@@ -1527,7 +1563,7 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
     r = _note(r, "※ 가격표의 '가격 조정 이유'를 보면 왜 올렸거나 내렸는지 쉽게 확인할 수 있습니다.")
     r += 1
 
-    # ── 섹션 5: 수익 시뮬레이터 ───────────────────────────────────
+    # ── 섹션 6: 수익 시뮬레이터 ───────────────────────────────────
     r = _section(r, "수익 시뮬레이터 가정")
     r = _item(r, "호스트 수수료 3%",
               "Airbnb 기본 호스트 수수료. 총 매출의 3%를 공제합니다.")
@@ -1557,19 +1593,6 @@ def _build_guide_sheet(wb, f, is_internal: bool = False) -> None:
                   "경쟁자 평균 평점의 역점수. 낮은 경쟁 품질=차별화 용이. "
                   "<4.50=25점 / <4.70=18점 / <4.85=12점 / 이상=6점.")
         r = _note(r, "※ 수집 숙소 15개 미만 시 신뢰도 경고가 표시됩니다.")
-        r += 1
-
-        # ── 섹션 7: 개인·상업용 분류 ──────────────────────────────
-        r = _section(r, "개인·상업용 분류 기준")
-        r = _item(r, "분류 로직",
-                  "건물유형·호스트명·소개글 키워드에 스코어를 부여합니다. "
-                  "합산 점수 2점 이상이면 '상업용'으로 분류합니다.", True)
-        r = _item(r, "건물 유형 (+3점)",
-                  "호텔, 게스트하우스, 호스텔, B&B, 부티크호텔 등 해당 시 3점 추가.")
-        r = _item(r, "호스트명 (+2점)",
-                  "이름에 '호텔', '스테이', '레지던스', '리조트', '펜션', '모텔' 등 포함 시 2점 추가.")
-        r = _item(r, "소개글 (+2점)",
-                  "'프론트 데스크', '리셉션', '체크인 카운터' 등 2개 이상 포함 시 2점 추가.")
         r += 1
 
         # ── 섹션 8: 수요 추정 ──────────────────────────────────────
@@ -1727,6 +1750,8 @@ def _build_rawdata_sheet(wb, f, listings, stats):
         ("번호",          "idx",             5),
         ("숙소명",        "title",           40),
         ("구분",          "host_type",       8),
+        ("구분점수",      "classification_score", 9),
+        ("구분근거",      "classification_reason", 36),
         ("이상치",        "_outlier",        7),
         ("숙소유형",      "room_type",       13),
         ("건물유형",      "property_type",   13),
@@ -1790,7 +1815,7 @@ def _build_rawdata_sheet(wb, f, listings, stats):
             elif field in ("price_weekday", "price_weekend", "price_per_night"):
                 v = lst.get(field)
                 ws.write(row, ci, v if v else "", n_fmt)
-            elif field in ("bedrooms", "beds", "max_guests"):
+            elif field in ("bedrooms", "beds", "max_guests", "classification_score"):
                 ws.write(row, ci, int(lst.get(field) or 0), n_fmt)
             elif field in ("bathrooms", "rating"):
                 ws.write(row, ci, lst.get(field) or 0,
