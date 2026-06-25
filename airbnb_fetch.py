@@ -35,6 +35,72 @@ class AirbnbListing:
     review_count: int = 0
     latitude: float = 0.0
     longitude: float = 0.0
+    guest_favorite: str = ""
+    search_badges: str = ""
+
+
+def _walk(obj: Any, path: tuple[str, ...] = ()):
+    yield path, obj
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            yield from _walk(value, path + (str(key),))
+    elif isinstance(obj, list):
+        for idx, value in enumerate(obj):
+            yield from _walk(value, path + (str(idx),))
+
+
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("text", "title", "body", "name", "localizedString", "localizedStringWithTranslationPreference"):
+            text = _clean_text(value.get(key))
+            if text:
+                return text
+        return ""
+    text = str(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _extract_review_count_from_search(item: dict) -> int:
+    best = 0
+    for path, value in _walk(item):
+        key = ".".join(path).lower()
+        if isinstance(value, int) and 0 < value < 200_000:
+            if any(token in key for token in ("reviewcount", "reviewscount", "review_count", "reviews_count")):
+                return value
+        text = _clean_text(value)
+        if not text:
+            continue
+        for pattern in (
+            r"(?:후기|리뷰)\s*([\d,]+)\s*개",
+            r"([\d,]+)\s*(?:개의\s*)?(?:후기|리뷰)",
+            r"([\d,]+)\s*reviews?",
+        ):
+            match = re.search(pattern, text, re.I)
+            if match:
+                try:
+                    best = max(best, int(match.group(1).replace(",", "")))
+                except ValueError:
+                    pass
+    return best
+
+
+def _extract_search_badges(item: dict) -> tuple[str, str]:
+    badges: list[str] = []
+    for path, value in _walk(item):
+        key = ".".join(path).lower()
+        if not any(token in key for token in ("badge", "label", "title", "message", "subtitle")):
+            continue
+        text = _clean_text(value)
+        if 2 <= len(text) <= 80 and text not in badges:
+            if any(term in text.lower() for term in ("guest favorite", "superhost", "게스트", "슈퍼호스트", "인기")):
+                badges.append(text)
+    joined = " | ".join(badges[:8])
+    guest_favorite = "Y" if any(term in joined.lower() for term in ("guest favorite", "게스트 선호")) else ""
+    return guest_favorite, joined
 
 
 class AirbnbError(RuntimeError):
@@ -335,6 +401,7 @@ def _normalize(item: dict, region_query: str) -> AirbnbListing | None:
             rating = float(m2.group())
 
     room_type, property_type = _infer_type(item.get("title", ""))
+    guest_favorite, search_badges = _extract_search_badges(item)
 
     return AirbnbListing(
         listing_id=lid,
@@ -348,9 +415,11 @@ def _normalize(item: dict, region_query: str) -> AirbnbListing | None:
         beds=info["beds"],
         bathrooms=info["bathrooms"],
         rating=rating,
-        review_count=0,
+        review_count=_extract_review_count_from_search(item),
         latitude=lat,
         longitude=lon,
+        guest_favorite=guest_favorite,
+        search_badges=search_badges,
     )
 
 

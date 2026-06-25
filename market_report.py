@@ -26,7 +26,7 @@ _BASE_DIR = (
 sys.path.insert(0, str(_BASE_DIR))
 from airbnb_fetch import crawl_airbnb, geocode_region
 from export_excel import _fix_colors, C_DARK_BLUE, C_MID_BLUE, C_LIGHT_BLUE, C_WHITE, C_LINK
-from export_excel_detail import fetch_detail, DETAIL_COLS
+from export_excel_detail import fetch_detail, DETAIL_COLS, _merge_detail
 from curl_cffi import requests as cf_requests
 
 # ── 추가 색상 ──────────────────────────────────────────────────────
@@ -147,7 +147,7 @@ def _fetch_window(
     print(f"  [{label}] {len(listings)}개 수집 → 상세 크롤링...")
     for i, lst in enumerate(listings, 1):
         detail = fetch_detail(lst["url"], session)
-        lst.update(detail)
+        _merge_detail(lst, detail)
         ok = bool(detail.get("description") and
                   not detail["description"].startswith("오류"))
         print(f"    [{i:>2}/{len(listings)}] {'✅' if ok else '⚠'}", end="\r")
@@ -1591,6 +1591,8 @@ def _build_rawdata_sheet(wb, f, listings, stats):
         ("위도",          "latitude",        12),
         ("경도",          "longitude",       12),
     ]
+    existing_fields = {field for _, field, _ in base_cols}
+    base_cols.extend(col for col in DETAIL_COLS if col[1] not in existing_fields)
 
     # 배너
     ws.merge_range(0, 0, 0, len(base_cols) - 1, "원본 데이터 (전체)", f["section"])
@@ -1627,7 +1629,7 @@ def _build_rawdata_sheet(wb, f, listings, stats):
                                          "bg_color": "#FFDAD5" if oo else ("#EBF3FB" if alt else "#FFFFFF"),
                                          "border": 1, "border_color": "#BDD7EE"})
                 ws.write_url(row, ci, str(lst.get(field, "")), lnk_fmt, str(lst.get(field, "")))
-            elif field in ("price_weekday", "price_weekend", "price_per_night"):
+            elif field in ("price_weekday", "price_weekend", "price_per_night", "cleaning_fee", "service_fee", "tax_fee", "review_count"):
                 v = lst.get(field)
                 ws.write(row, ci, v if v else "", n_fmt)
             elif field in ("bedrooms", "beds", "max_guests"):

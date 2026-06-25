@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import xlsxwriter
 from curl_cffi import requests as cf_requests
@@ -36,6 +37,32 @@ DETAIL_COLS = [
     ("슈퍼호스트",  "superhost",        9),
     ("하우스룰",    "house_rules",     32),
     ("취소정책",    "cancellation",    25),
+    ("리뷰수",      "review_count",     9),
+    ("상세상태",    "detail_status",    12),
+    ("상세출처",    "detail_source",    16),
+    ("게스트선호",  "guest_favorite",   10),
+    ("검색배지",    "search_badges",    24),
+    ("호스트ID",    "host_id",          16),
+    ("호스트상세",  "host_about",       35),
+    ("체크인",      "checkin_time",     16),
+    ("체크아웃",    "checkout_time",    16),
+    ("수수료요약",  "fees_text",        35),
+    ("청소비",      "cleaning_fee",     12),
+    ("서비스수수료","service_fee",      14),
+    ("세금",        "tax_fee",          12),
+    ("평점세부",    "rating_breakdown", 35),
+    ("등록번호",    "license_number",   18),
+    ("WiFi",        "wifi",             8),
+    ("주방",        "kitchen",          8),
+    ("세탁기",      "washer",           8),
+    ("건조기",      "dryer",            8),
+    ("에어컨",      "aircon",           8),
+    ("난방",        "heating",          8),
+    ("엘리베이터",  "elevator",         10),
+    ("주차",        "parking",          8),
+    ("업무공간",    "workspace",        10),
+    ("셀프체크인",  "self_checkin",     11),
+    ("반려동물",    "pets_allowed",     10),
 ]
 
 
@@ -53,20 +80,171 @@ def _get_deferred_data(html: str) -> dict | None:
         return None
 
 
+def _walk_detail(obj: Any, path: tuple[str, ...] = ()):
+    yield path, obj
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            yield from _walk_detail(value, path + (str(key),))
+    elif isinstance(obj, list):
+        for idx, value in enumerate(obj):
+            yield from _walk_detail(value, path + (str(idx),))
+
+
+def _clean_detail_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("title", "label", "text", "body", "subtitle", "description", "name", "localizedStringWithTranslationPreference"):
+            text = _clean_detail_text(value.get(key))
+            if text:
+                return text
+        return ""
+    text = str(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _parse_price_amount(text: str) -> int:
+    match = re.search(r"(?:₩|KRW\s*)\s*([\d,]+)|([\d,]+)\s*원", text, re.I)
+    if not match:
+        return 0
+    raw = match.group(1) or match.group(2) or ""
+    try:
+        return int(raw.replace(",", ""))
+    except ValueError:
+        return 0
+
+
+def _collect_texts(root: Any, tokens: tuple[str, ...], *, max_items: int = 12, max_len: int = 180) -> list[str]:
+    out: list[str] = []
+    lowered = tuple(token.lower() for token in tokens)
+    for path, value in _walk_detail(root):
+        key = ".".join(path).lower()
+        if lowered and not any(token in key for token in lowered):
+            continue
+        if isinstance(value, (dict, list, bool)):
+            continue
+        text = _clean_detail_text(value)
+        if 2 <= len(text) <= max_len and text not in out:
+            out.append(text)
+            if len(out) >= max_items:
+                break
+    return out
+
+
+def _first_text(root: Any, tokens: tuple[str, ...], *, max_len: int = 160) -> str:
+    values = _collect_texts(root, tokens, max_items=1, max_len=max_len)
+    return values[0] if values else ""
+
+
+def _first_number(root: Any, tokens: tuple[str, ...], *, maximum: int = 100_000) -> int:
+    lowered = tuple(token.lower() for token in tokens)
+    for path, value in _walk_detail(root):
+        key = ".".join(path).lower()
+        if lowered and not any(token in key for token in lowered):
+            continue
+        if isinstance(value, int) and 0 < value <= maximum:
+            return value
+        text = _clean_detail_text(value)
+        if text:
+            match = re.search(r"([\d,]+)", text)
+            if match:
+                try:
+                    number = int(match.group(1).replace(",", ""))
+                    if 0 < number <= maximum:
+                        return number
+                except ValueError:
+                    pass
+    return 0
+
+
+def _first_price(root: Any, tokens: tuple[str, ...]) -> int:
+    lowered = tuple(token.lower() for token in tokens)
+    for path, value in _walk_detail(root):
+        key = ".".join(path).lower()
+        text = _clean_detail_text(value)
+        if not text:
+            continue
+        if lowered and not any(token in key or token in text.lower() for token in lowered):
+            continue
+        amount = _parse_price_amount(text)
+        if amount:
+            return amount
+    return 0
+
+
+def _flag_from_text(text: str, terms: tuple[str, ...]) -> str:
+    lower = text.lower()
+    return "Y" if any(term.lower() in lower for term in terms) else ""
+
+
+def _amenity_flags(amenities: str, policies: str) -> dict[str, str]:
+    joined = f"{amenities} | {policies}"
+    return {
+        "wifi": _flag_from_text(joined, ("wifi", "wi-fi", "무선 인터넷", "와이파이")),
+        "kitchen": _flag_from_text(joined, ("kitchen", "주방", "간이 주방")),
+        "washer": _flag_from_text(joined, ("washer", "세탁기", "laundry")),
+        "dryer": _flag_from_text(joined, ("dryer", "건조기")),
+        "aircon": _flag_from_text(joined, ("air conditioning", "aircon", "에어컨", "냉방")),
+        "heating": _flag_from_text(joined, ("heating", "난방")),
+        "elevator": _flag_from_text(joined, ("elevator", "엘리베이터", "lift")),
+        "parking": _flag_from_text(joined, ("parking", "주차")),
+        "workspace": _flag_from_text(joined, ("workspace", "업무 전용", "업무공간", "desk")),
+        "self_checkin": _flag_from_text(joined, ("self check", "셀프 체크인", "키패드", "스마트록")),
+        "pets_allowed": _flag_from_text(joined, ("pets allowed", "반려동물 가능", "반려동물 동반")),
+    }
+
+
+def _extract_rating_breakdown(root: Any) -> str:
+    labels = {
+        "cleanliness": "clean",
+        "accuracy": "accuracy",
+        "checkin": "checkin",
+        "communication": "comm",
+        "location": "location",
+        "value": "value",
+    }
+    parts: list[str] = []
+    for token, label in labels.items():
+        for path, value in _walk_detail(root):
+            key = ".".join(path).lower()
+            if token not in key:
+                continue
+            if isinstance(value, (int, float)) and 0 < float(value) <= 5:
+                parts.append(f"{label}:{float(value):.2f}")
+                break
+            text = _clean_detail_text(value)
+            match = re.search(r"([0-5](?:\.\d+)?)", text)
+            if match:
+                parts.append(f"{label}:{float(match.group(1)):.2f}")
+                break
+    return " | ".join(dict.fromkeys(parts))
+
+
+def _merge_detail(lst: dict, detail: dict) -> None:
+    for key, value in detail.items():
+        if value not in ("", None, 0):
+            lst[key] = value
+
+
 def fetch_detail(url: str, session: cf_requests.Session) -> dict:
     """숙소 상세 페이지 → 추가 정보 dict 반환."""
     empty: dict = {col[1]: "" for col in DETAIL_COLS}
+    empty["detail_source"] = "airbnb_detail"
 
     try:
         r = session.get(url, timeout=20, impersonate="chrome120")
         if r.status_code != 200:
             empty["description"] = f"HTTP {r.status_code}"
+            empty["detail_status"] = "http_error"
             return empty
 
         html = r.text
         raw = _get_deferred_data(html)
         if not raw:
             empty["description"] = "JSON 없음"
+            empty["detail_status"] = "no_json"
             return empty
 
         # ── JSON 경로 탐색 ────────────────────────────────────
@@ -173,6 +351,31 @@ def fetch_detail(url: str, session: cf_requests.Session) -> dict:
                         )
                     break
 
+        review_count = _first_number(
+            data_root,
+            ("reviewcount", "reviewscount", "review_count", "reviews_count"),
+            maximum=200_000,
+        )
+        host_id = str(card.get("id") or card.get("userId") or _first_text(data_root, ("hostid", "userid"), max_len=80))
+        host_about = " | ".join(
+            _collect_texts(sec_map.get("MEET_YOUR_HOST", {}) or data_root, ("about", "subtitle", "description"), max_items=4, max_len=180)
+        )
+        checkin_time = " | ".join(
+            _collect_texts(sec_map.get("POLICIES_DEFAULT", {}) or data_root, ("checkin", "check_in"), max_items=3, max_len=120)
+        )
+        checkout_time = " | ".join(
+            _collect_texts(sec_map.get("POLICIES_DEFAULT", {}) or data_root, ("checkout", "check_out"), max_items=3, max_len=120)
+        )
+        fees_text = " | ".join(
+            _collect_texts(data_root, ("pricebreakdown", "pricedetails", "fee", "tax"), max_items=10, max_len=120)
+        )
+        cleaning_fee = _first_price(data_root, ("cleaning", "청소"))
+        service_fee = _first_price(data_root, ("service", "서비스"))
+        tax_fee = _first_price(data_root, ("tax", "세금"))
+        rating_breakdown = _extract_rating_breakdown(data_root)
+        license_number = _first_text(data_root, ("registration", "license", "permit", "등록"), max_len=80)
+        flags = _amenity_flags(amenities, house_rules)
+
         return {
             "max_guests":   max_guests,
             "bed_types":    bed_types[:250],
@@ -182,10 +385,25 @@ def fetch_detail(url: str, session: cf_requests.Session) -> dict:
             "superhost":    superhost,
             "house_rules":  house_rules[:600],
             "cancellation": cancellation[:200],
+            "review_count": review_count,
+            "detail_status": "ok",
+            "detail_source": "airbnb_detail",
+            "host_id": host_id[:80],
+            "host_about": host_about[:350],
+            "checkin_time": checkin_time[:160],
+            "checkout_time": checkout_time[:160],
+            "fees_text": fees_text[:350],
+            "cleaning_fee": cleaning_fee,
+            "service_fee": service_fee,
+            "tax_fee": tax_fee,
+            "rating_breakdown": rating_breakdown[:350],
+            "license_number": license_number[:80],
+            **flags,
         }
 
     except Exception as e:
         empty["description"] = f"오류: {e}"
+        empty["detail_status"] = "error"
         return empty
 
 
@@ -251,6 +469,10 @@ def build_excel_detail(
         "house_rules":     (fmt_wrap,  fmt_wrap_a),
         "cancellation":    (fmt_wrap,  fmt_wrap_a),
     }
+    for field in ("review_count", "cleaning_fee", "service_fee", "tax_fee"):
+        FMT[field] = (fmt_num, fmt_num_a)
+    for field in ("host_about", "fees_text", "rating_breakdown", "search_badges"):
+        FMT[field] = (fmt_wrap, fmt_wrap_a)
 
     # ── 열 너비 ──────────────────────────────────────────────
     for ci, (_, _, w) in enumerate(all_cols):
@@ -296,7 +518,7 @@ def build_excel_detail(
         }
 
         for ci, (_, field, _) in enumerate(all_cols):
-            fmt = FMT[field][1 if alt else 0]
+            fmt = FMT.get(field, (fmt_text, fmt_text_a))[1 if alt else 0]
             val = field_map[field]
             if field == "url":
                 ws.write_url(row, ci, str(val), fmt, str(val))
@@ -338,7 +560,7 @@ def run(query: str, checkin: str, checkout: str) -> None:
         url = lst["url"]
         print(f"  [{i:>2}/{len(listings)}] {lst['title'][:40]} ...", end=" ", flush=True)
         detail = fetch_detail(url, session)
-        lst.update(detail)
+        _merge_detail(lst, detail)
 
         ok = bool(detail.get("description") and not detail["description"].startswith("오류"))
         print("✅" if ok else f"⚠ {detail.get('description', '')[:30]}")
