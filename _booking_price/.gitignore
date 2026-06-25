@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+
+# Flask
+instance/
+.webassets-cache
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug / scratch
+debug_*.py
+debug_*.html
+*.json.bak
+deferred_*.json
+injector*.json
+first_item*.json
+
+# Vercel
+.vercel/
+.vercel
+
+# Generated output (산출물 — 로컬 전용)
+output/
+verification_output/
+_scratch/
+
+# Backup / snapshot folders (로컬 전용)
+_v1_backup/
+_v2_market_report_backup/
+_snapshot_pre_gui/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Test screenshots / temp files
+_color_test*.xlsx
+_color_test*.png
+_colortest*.png
+_excel_*.png
+_final_*.png
+_screen_*.png
+map_*.png
+service_screenshot.png
+app_icon.png
+airbnb_price_analyzer.zip
+
+# PyInstaller 빌드 산출물
+에어비앤비_시장분석_포터블.zip

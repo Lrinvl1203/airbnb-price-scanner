@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Booking.com 시세 스캐너</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    #map { height: 500px; }
+    .filter-chip {
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #64748b;
+      transition: all 0.15s;
+    }
+    .filter-chip.on {
+      background: #fff1f2;
+      border-color: #fda4af;
+      color: #e11d48;
+    }
+    .leaflet-popup-content { margin: 10px 14px; min-width: 180px; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- ── 헤더 ── -->
+<header class="bg-rose-600 text-white shadow">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
+    <span class="text-2xl">🏠</span>
+    <div>
+      <h1 class="text-xl font-bold leading-tight">Booking.com 시세 스캐너</h1>
+      <p class="text-rose-200 text-xs mt-0.5">지역을 입력하면 실제 Booking.com 숙소 시세를 분석합니다</p>
+    </div>
+  </div>
+</header>
+
+<!-- ── 검색 폼 ── -->
+<div class="bg-white border-b shadow-sm">
+  <div class="max-w-7xl mx-auto px-4 py-4">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="w-full sm:flex-1 sm:min-w-[180px]">
+        <label class="block text-xs font-medium text-gray-600 mb-1">지역명</label>
+        <input id="query" type="text" placeholder="예: 대치동, 홍대, 강남, 해운대"
+               class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
+        <p class="text-[10px] text-gray-400 mt-0.5">동·구·역·도시명 자유롭게 입력</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">체크인</label>
+        <input id="checkin" type="date" value="{{ default_checkin }}"
+               class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">체크아웃</label>
+        <input id="checkout" type="date" value="{{ default_checkout }}"
+               class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400" />
+      </div>
+
+      <button id="searchBtn" onclick="doSearch()"
+              class="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors">
+        검색
+      </button>
+    </div>
+
+    <!-- 예시 버튼 -->
+    <div class="w-full mt-2 flex flex-wrap gap-1.5">
+      <span class="text-[10px] text-gray-400 self-center">빠른 검색:</span>
+      <button onclick="setQuery('대치동')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">대치동</button>
+      <button onclick="setQuery('홍대')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">홍대</button>
+      <button onclick="setQuery('강남')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">강남</button>
+      <button onclick="setQuery('해운대')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">해운대</button>
+      <button onclick="setQuery('제주시')"    class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">제주시</button>
+      <button onclick="setQuery('경주')"      class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">경주</button>
+      <button onclick="setQuery('서울 마포구')" class="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 text-gray-500 hover:border-rose-400 hover:text-rose-600 transition-colors">마포구</button>
+    </div>
+
+    <!-- 안내 (결과 적을 때) -->
+    <div id="noticeMsg" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm"></div>
+
+    <!-- 오류 -->
+    <div id="errorMsg" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"></div>
+
+    <!-- 로딩 -->
+    <div id="loadingMsg" class="hidden mt-3 flex items-center gap-2 text-gray-500 text-sm">
+      <svg class="animate-spin h-4 w-4 text-rose-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+      </svg>
+      Booking.com 데이터를 수집하는 중입니다… (약 15~40초 소요)
+    </div>
+  </div>
+</div>
+
+<!-- ── 통계 카드 ── -->
+<div id="statsSection" class="hidden max-w-7xl mx-auto px-4 pt-4">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <p class="text-xs text-gray-400">숙소 수</p>
+      <p id="statCount" class="text-2xl font-bold text-gray-800 mt-1">0</p>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <p class="text-xs text-gray-400">평균 1박</p>
+      <p id="statAvg" class="text-2xl font-bold text-rose-600 mt-1">—</p>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <p class="text-xs text-gray-400">최저 1박</p>
+      <p id="statMin" class="text-2xl font-bold text-emerald-600 mt-1">—</p>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm border">
+      <p class="text-xs text-gray-400">최고 1박</p>
+      <p id="statMax" class="text-2xl font-bold text-blue-600 mt-1">—</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 메인: 필터 + 지도 ── -->
+<div id="mainSection" class="hidden max-w-7xl mx-auto px-4 py-4">
+  <div class="flex gap-4 items-start">
+
+    <!-- 필터 패널 -->
+    <aside class="w-52 shrink-0">
+      <div class="bg-white rounded-xl shadow-sm border p-4 sticky top-4 space-y-5">
+        <h3 class="font-semibold text-gray-700 text-sm">필터</h3>
+
+        <!-- 숙소 유형 -->
+        <div>
+          <p class="text-xs text-gray-400 uppercase font-medium mb-2">숙소 유형</p>
+          <div id="roomTypeFilter" class="flex flex-col gap-1.5"></div>
+        </div>
+
+        <!-- 침실 수 -->
+        <div>
+          <p class="text-xs text-gray-400 uppercase font-medium mb-2">침실 수</p>
+          <div id="bedroomFilter" class="flex flex-wrap gap-1"></div>
+        </div>
+
+        <!-- 가격 범위 -->
+        <div>
+          <p class="text-xs text-gray-400 uppercase font-medium mb-2">가격 범위 (1박, 만원)</p>
+          <div class="flex items-center gap-1">
+            <input id="priceMin" type="number" placeholder="최저" step="0.5" min="0"
+                   class="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-rose-400"
+                   oninput="applyFilters()" />
+            <span class="text-gray-300 text-xs">~</span>
+            <input id="priceMax" type="number" placeholder="최고" step="0.5" min="0"
+                   class="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-rose-400"
+                   oninput="applyFilters()" />
+          </div>
+        </div>
+
+        <!-- 최소 평점 -->
+        <div>
+          <p class="text-xs text-gray-400 uppercase font-medium mb-2">최소 평점</p>
+          <select id="ratingFilter" onchange="applyFilters()"
+                  class="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-rose-400">
+            <option value="0">전체</option>
+            <option value="4">4.0 이상</option>
+            <option value="4.5">4.5 이상</option>
+            <option value="4.8">4.8 이상</option>
+          </select>
+        </div>
+
+        <button onclick="resetFilters()"
+                class="w-full text-xs text-gray-400 hover:text-rose-600 transition-colors pt-1 border-t">
+          필터 초기화
+        </button>
+      </div>
+    </aside>
+
+    <!-- 지도 -->
+    <div class="flex-1 min-w-0">
+      <div class="rounded-xl overflow-hidden shadow-sm border">
+        <div id="map"></div>
+      </div>
+      <!-- 범례 -->
+      <div class="flex items-center gap-2 mt-2 px-1 flex-wrap">
+        <span class="text-xs text-gray-400">저렴</span>
+        <div class="flex-1 min-w-[80px] h-2 rounded-full" style="background: linear-gradient(to right, #22c55e, #eab308, #ef4444);"></div>
+        <span class="text-xs text-gray-400">비쌈</span>
+        <span class="text-xs text-gray-400 ml-2">● 숙소</span>
+        <span class="text-xs text-gray-400">
+          <span style="display:inline-block;width:10px;height:2px;border:1.5px dashed #f43f5e;vertical-align:middle;margin-right:2px"></span>검색 반경
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 차트 3개 ── -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+
+    <div class="bg-white rounded-xl shadow-sm border p-4">
+      <h4 class="text-sm font-semibold text-gray-600 mb-3">가격 분포</h4>
+      <canvas id="chartHist"></canvas>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border p-4">
+      <h4 class="text-sm font-semibold text-gray-600 mb-3">숙소 유형별 평균가</h4>
+      <canvas id="chartType"></canvas>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border p-4">
+      <h4 class="text-sm font-semibold text-gray-600 mb-3">침실 수별 평균가</h4>
+      <canvas id="chartBeds"></canvas>
+    </div>
+
+  </div>
+</div><!-- /mainSection -->
+
+<script>
+// ────────────────────────────────────────────
+//  전역 상태
+// ────────────────────────────────────────────
+let allListings  = [];
+let filtered     = [];
+const charts     = {};
+let mapMarkers   = [];
+let radiusCircle = null;   // 검색 반경 원
+let searchMeta   = {};     // 마지막 검색 meta (center, radius_km)
+
+// ────────────────────────────────────────────
+//  지도 초기화 (서울 중심)
+// ────────────────────────────────────────────
+const map = L.map("map").setView([37.5665, 126.9780], 13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap contributors",
+  maxZoom: 18,
+}).addTo(map);
+
+// ────────────────────────────────────────────
+//  검색
+// ────────────────────────────────────────────
+async function doSearch() {
+  const query   = document.getElementById("query").value.trim();
+  const checkin = document.getElementById("checkin").value;
+  const checkout = document.getElementById("checkout").value;
+
+  if (!query) { showError("지역명을 입력해주세요."); return; }
+
+  setLoading(true);
+  hideError();
+
+  try {
+    const res = await fetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, checkin, checkout }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) { showError(data.error || "오류가 발생했습니다."); return; }
+    if (!data.listings || data.listings.length === 0) {
+      showError("검색 결과가 없습니다. 지역명 또는 날짜를 변경해 보세요."); return;
+    }
+
+    hideNotice();
+    if (data.notice) showNotice(data.notice);
+
+    searchMeta  = data.meta || {};
+    allListings = data.listings;
+
+    document.getElementById("statsSection").classList.remove("hidden");
+    document.getElementById("mainSection").classList.remove("hidden");
+    map.invalidateSize();
+
+    buildFilterUI();
+    applyFilters();
+
+  } catch (e) {
+    showError("서버 연결 오류: " + e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ────────────────────────────────────────────
+//  필터 UI 생성
+// ────────────────────────────────────────────
+function buildFilterUI() {
+  // 숙소 유형 체크박스
+  const types = [...new Set(allListings.map(l => l.room_type).filter(Boolean))].sort();
+  const rtDiv = document.getElementById("roomTypeFilter");
+  rtDiv.innerHTML = types.map(t => `
+    <label class="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+      <input type="checkbox" value="${esc(t)}" checked class="rt-cb accent-rose-500" onchange="applyFilters()">
+      ${esc(t)}
+    </label>`).join("");
+
+  // 침실 수 칩
+  const beds = [...new Set(allListings.map(l => l.bedrooms))].sort((a, b) => a - b);
+  const bdDiv = document.getElementById("bedroomFilter");
+  bdDiv.innerHTML = beds.map(b => `
+    <button class="filter-chip on" data-val="${b}" onclick="toggleChip(this)">${b}개</button>
+  `).join("");
+
+  // 가격 기본값 (만원 단위 입력, 소수 1자리 표시)
+  const prices = allListings.map(l => l.price_per_night).filter(p => p > 0);
+  const toMan = w => +(w / 10000).toFixed(1);
+  document.getElementById("priceMin").placeholder = toMan(Math.min(...prices));
+  document.getElementById("priceMax").placeholder = toMan(Math.max(...prices));
+}
+
+function toggleChip(btn) {
+  btn.classList.toggle("on");
+  applyFilters();
+}
+
+// ────────────────────────────────────────────
+//  필터 적용
+// ────────────────────────────────────────────
+function applyFilters() {
+  const selTypes = [...document.querySelectorAll(".rt-cb:checked")].map(el => el.value);
+  const selBeds  = [...document.querySelectorAll("#bedroomFilter .filter-chip.on")].map(b => parseInt(b.dataset.val));
+  const pMinMan  = parseFloat(document.getElementById("priceMin").value);
+  const pMaxMan  = parseFloat(document.getElementById("priceMax").value);
+  const pMin     = pMinMan > 0 ? pMinMan * 10000 : 0;
+  const pMax     = pMaxMan > 0 ? pMaxMan * 10000 : Infinity;
+  const minRat   = parseFloat(document.getElementById("ratingFilter").value) || 0;
+
+  filtered = allListings.filter(l => {
+    if (selTypes.length && !selTypes.includes(l.room_type)) return false;
+    if (selBeds.length  && !selBeds.includes(l.bedrooms))  return false;
+    if (pMin > 0 && l.price_per_night < pMin) return false;
+    if (pMax < Infinity && l.price_per_night > pMax) return false;
+    if (minRat > 0 && l.rating < minRat) return false;
+    return true;
+  });
+
+  renderStats();
+  renderMap();
+  renderCharts();
+}
+
+function resetFilters() {
+  document.querySelectorAll(".rt-cb").forEach(el => { el.checked = true; });
+  document.querySelectorAll("#bedroomFilter .filter-chip").forEach(b => b.classList.add("on"));
+  document.getElementById("priceMin").value = "";
+  document.getElementById("priceMax").value = "";
+  document.getElementById("ratingFilter").value = "0";
+  applyFilters();
+}
+
+// ────────────────────────────────────────────
+//  통계 카드
+// ────────────────────────────────────────────
+function renderStats() {
+  const prices = filtered.map(l => l.price_per_night).filter(p => p > 0);
+  document.getElementById("statCount").textContent = filtered.length.toLocaleString();
+
+  if (!prices.length) {
+    ["statAvg","statMin","statMax"].forEach(id => document.getElementById(id).textContent = "—");
+    return;
+  }
+  const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+  document.getElementById("statAvg").textContent = fmtManKr(avg);
+  document.getElementById("statMin").textContent = fmtManKr(Math.min(...prices));
+  document.getElementById("statMax").textContent = fmtManKr(Math.max(...prices));
+}
+
+// ────────────────────────────────────────────
+//  지도
+// ────────────────────────────────────────────
+function renderMap() {
+  // 이전 마커·원 제거
+  mapMarkers.forEach(m => m.remove());
+  mapMarkers = [];
+  if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
+
+  const geo = filtered.filter(l => Math.abs(l.latitude) > 0.1 && Math.abs(l.longitude) > 0.1);
+  if (!geo.length) return;
+
+  // ① 검색 반경 원 (지오코딩 성공 시)
+  const layers = [];
+  if (searchMeta.center_lat && searchMeta.radius_km) {
+    radiusCircle = L.circle(
+      [searchMeta.center_lat, searchMeta.center_lon],
+      {
+        radius:      searchMeta.radius_km * 1000,
+        color:       "#f43f5e",
+        fillColor:   "#fda4af",
+        fillOpacity: 0.07,
+        weight:      1.5,
+        dashArray:   "6 4",
+      }
+    ).addTo(map);
+    layers.push(radiusCircle);
+  }
+
+  // ② 좌표 기준 중복 제거 (같은 건물 여러 매물 → 가장 저렴한 것만 표시)
+  const coordMap = {};
+  geo.forEach(l => {
+    const key = `${l.latitude.toFixed(4)},${l.longitude.toFixed(4)}`;
+    if (!coordMap[key]) coordMap[key] = [];
+    coordMap[key].push(l);
+  });
+  const unique = Object.values(coordMap).map(group =>
+    group.reduce((a, b) => a.price_per_night <= b.price_per_night ? a : b)
+  );
+
+  const prices = unique.map(l => l.price_per_night);
+  const minP   = Math.min(...prices);
+  const maxP   = Math.max(...prices);
+
+  // ③ 마커 렌더링
+  unique.forEach(l => {
+    const group = coordMap[`${l.latitude.toFixed(4)},${l.longitude.toFixed(4)}`];
+    const extra = group.length > 1 ? `<div style="color:#94a3b8;font-size:10px;margin-top:2px">같은 위치 ${group.length}개 매물</div>` : "";
+
+    const color  = priceColor(l.price_per_night, minP, maxP);
+    const marker = L.circleMarker([l.latitude, l.longitude], {
+      radius: 8, fillColor: color, color: "#fff",
+      weight: 1.5, opacity: 1, fillOpacity: 0.88,
+    }).addTo(map);
+
+    marker.bindPopup(`
+      <div style="font-size:13px; line-height:1.5">
+        <div style="font-weight:600; margin-bottom:3px">${esc(l.title)}</div>
+        <div style="color:#e11d48; font-weight:700; font-size:15px">${fmtManKr(l.price_per_night)}<span style="font-size:11px; font-weight:400">/박</span></div>
+        <div style="color:#64748b; margin-top:4px">${esc(l.room_type)} · 침실 ${l.bedrooms}개 · 침대 ${l.beds}개</div>
+        <div style="color:#64748b">${l.rating ? "★ " + l.rating.toFixed(2) : "평점 없음"}</div>
+        ${extra}
+        <a href="${esc(l.url)}" target="_blank"
+           style="color:#3b82f6; font-size:11px; text-decoration:underline; margin-top:4px; display:inline-block">
+          Booking.com에서 보기 →
+        </a>
+      </div>`);
+
+    mapMarkers.push(marker);
+    layers.push(marker);
+  });
+
+  // ④ 뷰 맞추기 (원 + 마커 전체 포함)
+  if (layers.length) {
+    map.fitBounds(L.featureGroup(layers).getBounds().pad(0.12));
+  }
+}
+
+function priceColor(price, minP, maxP) {
+  if (maxP === minP) return "#f87171";
+  const t = (price - minP) / (maxP - minP); // 0~1
+  // green → yellow → red
+  if (t < 0.5) {
+    const r = Math.round(255 * t * 2);
+    return `rgb(${r}, 195, 50)`;
+  } else {
+    const g = Math.round(195 * (1 - (t - 0.5) * 2));
+    return `rgb(255, ${g}, 50)`;
+  }
+}
+
+// ────────────────────────────────────────────
+//  차트
+// ────────────────────────────────────────────
+function renderCharts() {
+  const prices = filtered.map(l => l.price_per_night).filter(p => p > 0);
+  renderHistogram(prices);
+  renderGroupBar("chartType",  filtered, l => l.room_type, "숙소 유형");
+  renderGroupBar("chartBeds",  filtered, l => `침실 ${l.bedrooms}개`, "침실 수");
+}
+
+function renderHistogram(prices) {
+  destroyChart("chartHist");
+  if (!prices.length) return;
+
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const N    = 8;
+  const step = Math.ceil((maxP - minP + 1) / N);
+  const buckets = Array(N).fill(0);
+  const labels  = [];
+
+  for (let i = 0; i < N; i++) {
+    const lo = minP + i * step;
+    const hi = lo + step;
+    labels.push(`${fmtMan(lo)}~${fmtMan(hi)}`);
+  }
+  prices.forEach(p => {
+    const idx = Math.min(Math.floor((p - minP) / step), N - 1);
+    buckets[idx]++;
+  });
+
+  charts["chartHist"] = new Chart(document.getElementById("chartHist"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ label: "숙소 수", data: buckets,
+        backgroundColor: "rgba(244,63,94,0.65)", borderColor: "#f43f5e", borderWidth: 1 }],
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { font: { size: 9 } } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      },
+    },
+  });
+}
+
+function renderGroupBar(canvasId, listings, keyFn, _label) {
+  destroyChart(canvasId);
+  if (!listings.length) return;
+
+  const groups = {};
+  listings.forEach(l => {
+    const k = keyFn(l) || "기타";
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(l.price_per_night);
+  });
+
+  const labels = Object.keys(groups).sort();
+  const avgs   = labels.map(k => Math.round(groups[k].reduce((a,b)=>a+b,0) / groups[k].length));
+
+  charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ data: avgs,
+        backgroundColor: "rgba(59,130,246,0.65)", borderColor: "#3b82f6", borderWidth: 1 }],
+    },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { callback: v => fmtManKr(v), font: { size: 9 } } },
+        y: { ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// ────────────────────────────────────────────
+//  유틸
+// ────────────────────────────────────────────
+const fw  = n => n.toLocaleString();
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+// 만/억 단위 포맷 (59_real_estate 벤치마킹)
+function fmtMan(won) {
+  if (!won && won !== 0) return "—";
+  if (won >= 100_000_000) {               // 1억 이상
+    const eok  = Math.floor(won / 100_000_000);
+    const rest = Math.round((won % 100_000_000) / 10_000);
+    if (rest) return `${eok}억 ${rest.toLocaleString()}만`;
+    return `${eok}억`;
+  }
+  if (won >= 10_000) {                    // 1만 이상
+    const man = won / 10_000;
+    return (man % 1 === 0 ? man : man.toFixed(1)) + "만";
+  }
+  return won.toLocaleString();            // 1만 미만 → 원 단위
+}
+function fmtManKr(won) { return "₩" + fmtMan(won); }
+
+// 레거시: 히스토그램 등에서 사용 (fmtMan과 동일)
+const numK = fmtMan;
+
+function setLoading(on) {
+  document.getElementById("loadingMsg").classList.toggle("hidden", !on);
+  document.getElementById("searchBtn").disabled = on;
+}
+function showError(msg) {
+  const el = document.getElementById("errorMsg");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+function hideError() {
+  document.getElementById("errorMsg").classList.add("hidden");
+}
+function showNotice(msg) {
+  const el = document.getElementById("noticeMsg");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+function hideNotice() {
+  document.getElementById("noticeMsg").classList.add("hidden");
+}
+
+// Enter 키 검색
+document.getElementById("query").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+
+function setQuery(q) {
+  document.getElementById("query").value = q;
+  doSearch();
+}
+</script>
+</body>
+</html>
